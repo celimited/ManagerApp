@@ -1,0 +1,331 @@
+openapi: 3.0.0
+info:
+  title: Manager App API Documentation
+  version: 1.0.0
+
+
+paths:
+  /auth/login:
+    post:
+      summary: User Login
+      operationId: loginUser
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginSuccessResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /auth/forgot-password:
+    post:
+      summary: Request Password Reset OTP
+      operationId: forgotPassword
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginIdRequest'
+      responses:
+        '200':
+          description: OTP sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpSentResponse'
+
+  /auth/verify-otp:
+    post:
+      summary: Verify Password Reset OTP
+      operationId: verifyOtp
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOtpRequest'
+      responses:
+        '200':
+          description: OTP verified successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseApiResponse'
+
+  /auth/resend-otp:
+    post:
+      summary: Resend Password Reset OTP
+      operationId: resendOtp
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginIdRequest'
+      responses:
+        '200':
+          description: New OTP sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpSentResponse'
+
+  /auth/reset-password:
+    post:
+      summary: Reset Password
+      operationId: resetPassword
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetPasswordResponse'
+
+components:
+  responses:
+    UnauthorizedError:
+      description: Invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    # --- BASE RESPONSES ---
+    BaseApiResponse:
+      type: object
+      required:
+        - success
+        - statusCode
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        statusCode:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: "Operation completed successfully."
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        statusCode:
+          type: integer
+          example: 401
+        message:
+          type: string
+          example: "Invalid credentials provided."
+
+    # --- MODELS ---
+    DeviceInfo:
+      type: object
+      required:
+        - deviceId
+        - deviceType
+        - os
+        - appVersion
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+          example: "d1f2a3b4-uuid"
+        deviceType:
+          type: string
+          example: "mobile"
+        os:
+          type: string
+          example: "Android 14"
+        appVersion:
+          type: string
+          example: "2.1.0"
+
+    User:
+      type: object
+      required:
+        - userId
+        - fullName
+        - email
+        - phone
+        - profilePictureUrl
+        - role
+        - status
+      properties:
+        userId:
+          type: string
+          example: "usr_7f3a92bc"
+        fullName:
+          type: string
+          example: "John Doe"
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        phone:
+          type: string
+          example: "+8801700000000"
+        profilePictureUrl:
+          type: string
+          format: uri
+          example: "https://cdn.example.com/avatars/usr_7f3a92bc.jpg"
+        role:
+          type: string
+          example: "user"
+        status:
+          type: string
+          example: "active"
+
+    Tokens:
+      type: object
+      required:
+        - accessToken
+        - refreshToken
+        - tokenType
+        - expiresIn
+        - refreshTokenExpiresIn
+      properties:
+        accessToken:
+          type: string
+          example: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+        refreshToken:
+          type: string
+          example: "dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4..."
+        tokenType:
+          type: string
+          example: "Bearer"
+        expiresIn:
+          type: integer
+          description: Access token expiration time in seconds
+          example: 3600
+        refreshTokenExpiresIn:
+          type: integer
+          description: Refresh token expiration time in seconds
+          example: 2592000
+
+    OtpMetaData:
+      type: object
+      properties:
+        expiresIn:
+          type: integer
+          description: OTP lifetime in seconds
+          example: 300
+        resendAvailableIn:
+          type: integer
+          description: Delay in seconds before resending is permitted
+          example: 60
+
+    # --- REQUEST PAYLOADS ---
+    LoginRequest:
+      type: object
+      required:
+        - loginId
+        - password
+        - deviceInfo
+      properties:
+        loginId:
+          type: string
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          example: "P@ssw0rd!"
+        deviceInfo:
+          $ref: '#/components/schemas/DeviceInfo'
+
+    LoginIdRequest:
+      type: object
+      required:
+        - loginId
+      properties:
+        loginId:
+          type: string
+          example: "user@example.com"
+
+    VerifyOtpRequest:
+      type: object
+      required:
+        - otpCode
+      properties:
+        otpCode:
+          type: string
+          example: "847291"
+
+    ResetPasswordRequest:
+      type: object
+      required:
+        - newPassword
+        - confirmPassword
+      properties:
+        newPassword:
+          type: string
+          format: password
+          example: "NewP@ssw0rd!"
+        confirmPassword:
+          type: string
+          format: password
+          example: "NewP@ssw0rd!"
+
+    # --- SPECIFIC RESPONSE ENVELOPES ---
+    LoginSuccessResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Login successful."
+            data:
+              type: object
+              properties:
+                user:
+                  $ref: '#/components/schemas/User'
+                tokens:
+                  $ref: '#/components/schemas/Tokens'
+
+    OtpSentResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "OTP has been sent successfully."
+            data:
+              $ref: '#/components/schemas/OtpMetaData'
+
+    ResetPasswordResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Your password has been reset successfully. Please log in with your new password."
