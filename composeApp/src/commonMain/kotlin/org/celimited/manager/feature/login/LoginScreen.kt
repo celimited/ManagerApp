@@ -1,6 +1,7 @@
 package org.celimited.manager.feature.login
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -37,7 +38,10 @@ import org.jetbrains.compose.resources.painterResource
 
 @Composable
 @Preview
-fun LoginRoute() {
+fun LoginRoute(
+    onLogin:() -> Unit,
+    onForgotPasswordClick: () -> Unit
+) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars
@@ -46,13 +50,19 @@ fun LoginRoute() {
         LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            onLogin,
+            onForgotPasswordClick
         )
     }
 }
 
 @Composable
-fun LoginScreen(modifier: Modifier = Modifier) {
+fun LoginScreen(
+    modifier: Modifier = Modifier,
+    onLogin: () -> Unit,
+    onForgotPasswordClick: () -> Unit
+) {
 
     Column(
         modifier = modifier
@@ -120,13 +130,18 @@ fun LoginScreen(modifier: Modifier = Modifier) {
             text = "Forgot password?",
             modifier = Modifier
                 .padding(top = 10.dp)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .clickable(onClick = {
+                    onForgotPasswordClick()
+                }),
             textAlign = TextAlign.End
         )
 
         PrimaryButton(
             text = "Login",
-            onClick = {},
+            onClick = {
+                onLogin()
+            },
             containerColor = Color(0xFF582FFF),
             modifier = Modifier
                 .fillMaxWidth()

@@ -32,10 +32,13 @@ import manager.composeapp.generated.resources.ic_app_logo
 import org.celimited.manager.component.CornerRoundTextField
 import org.celimited.manager.component.PrimaryButton
 import org.jetbrains.compose.resources.painterResource
+import kotlin.Unit
 
 @Composable
 @Preview
-fun ResetPasswordRoute() {
+fun ResetPasswordRoute(
+    onResetDone:() -> Unit
+) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars
@@ -44,13 +47,14 @@ fun ResetPasswordRoute() {
         ResetPasswordScreen(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            onResetDone
         )
     }
 }
 
 @Composable
-fun ResetPasswordScreen(modifier: Modifier = Modifier) {
+fun ResetPasswordScreen(modifier: Modifier = Modifier, onResetDone:() -> Unit) {
 
     Column(
         modifier = modifier
@@ -116,7 +120,9 @@ fun ResetPasswordScreen(modifier: Modifier = Modifier) {
 
         PrimaryButton(
             text = "Done",
-            onClick = {},
+            onClick = {
+                    onResetDone()
+            },
             containerColor = Color(0xFF582FFF),
             modifier = Modifier
                 .fillMaxWidth()

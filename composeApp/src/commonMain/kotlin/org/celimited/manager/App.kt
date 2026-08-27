@@ -6,13 +6,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import org.celimited.manager.feature.forgotPassword.ForgotPasswordRoute
 import org.celimited.manager.feature.login.LoginRoute
 import org.celimited.manager.feature.resetPassword.ResetPasswordRoute
+import org.celimited.manager.navigation.AppNavigation
 
 @Composable
 @Preview
 fun App() {
     MaterialTheme {
-        //LoginRoute()
-        //ForgotPasswordRoute()
-        ResetPasswordRoute()
+        AppNavigation()
     }
 }

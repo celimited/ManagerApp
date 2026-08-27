@@ -1,8 +1,9 @@
-package org.celimited.manager.feature.forgotPassword
+package org.celimited.manager.feature.otp
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,36 +25,40 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import manager.composeapp.generated.resources.Res
 import manager.composeapp.generated.resources.ic_app_logo
 import org.celimited.manager.component.CornerRoundTextField
+import org.celimited.manager.component.OtpInputField
 import org.celimited.manager.component.PrimaryButton
+import org.celimited.manager.feature.forgotPassword.ForgotPasswordScreen
 import org.jetbrains.compose.resources.painterResource
 
+
 @Composable
-@Preview
-fun ForgotPasswordRoute(
-    onOtp:() -> Unit,
-) {
+fun OTPRoute (
+    onResetPassword:() -> Unit,
+){
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars
     ) { padding ->
 
-        ForgotPasswordScreen(
+        OTPScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            onOtp
+            onResetPassword
         )
     }
 }
 
 @Composable
-fun ForgotPasswordScreen(modifier: Modifier = Modifier, onOtp:() -> Unit) {
+fun OTPScreen (modifier: Modifier = Modifier, onResetPassword:() -> Unit) {
 
     Column(
         modifier = modifier
@@ -76,14 +81,22 @@ fun ForgotPasswordScreen(modifier: Modifier = Modifier, onOtp:() -> Unit) {
         )
 
         Text(
-            text = "Please enter your login ID to reset your password.",
+            text = "We will send you  an OTP to reset your password.",
             fontSize = 16.sp,
             modifier = Modifier
                 .padding(bottom = 24.dp)
         )
 
         Text(
-            text = "Login ID",
+            text = "OTP verification",
+            fontSize = 20.sp,
+            color = Color.Black,
+            modifier = Modifier
+                .padding(bottom = 20.dp)
+            )
+
+        Text(
+            text = "Enter the OTP send to 12345678909",
             fontSize = 14.sp,
             color = Color.Black
         )
@@ -91,22 +104,42 @@ fun ForgotPasswordScreen(modifier: Modifier = Modifier, onOtp:() -> Unit) {
         val modifier = Modifier
             .fillMaxWidth()
 
-        var loginId by rememberSaveable { mutableStateOf("") }
+        var otp by rememberSaveable { mutableStateOf("") }
 
-        CornerRoundTextField(
-            value = loginId,
-            onValueChange = { loginId = it },
-            modifier = modifier,
-            hint = "Enter your login ID",
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-            focusedBorderColor = Color(0xFFCBBFFF),
-            unfocusedBorderColor = Color(0xFFCBBFFF),
+        OtpInputField(
+            otpText = otp,
+            otpCount = 4, // change to 4 if needed
+            onOtpTextChange = { value, _ ->
+                otp = value
+            },
+            modifier = modifier.padding(top = 16.dp)
         )
 
+        Row (
+            modifier = Modifier
+                .padding(top = 20.dp)
+        ){
+            Text(
+                text = "Didn’t received OTP?",
+                fontSize = 14.sp,
+                color = Color.Black
+            )
+
+            Text(
+                text = "Resend",
+                fontSize = 14.sp,
+                color = Color.Black,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .padding(start = 5.dp)
+            )
+        }
+
         PrimaryButton(
-            text = "Next",
-            onClick = { onOtp() },
+            text = "Verify",
+            onClick = {
+                onResetPassword()
+            },
             containerColor = Color(0xFF582FFF),
             modifier = Modifier
                 .fillMaxWidth()
