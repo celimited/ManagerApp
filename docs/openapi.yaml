@@ -107,10 +107,163 @@ paths:
               schema:
                 $ref: '#/components/schemas/ResetPasswordResponse'
 
+  /user/subordinate-hierarchy-levels:
+    get:
+      summary: Get Subordinate Hierarchy Levels for Tabs
+      operationId: getSubordinateHierarchyLevels
+      tags:
+        - Hierarchy
+      security:
+        - BearerAuth: [ ]
+      responses:
+        '200':
+          description: Hierarchy tabs retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HierarchyLevelsResponse'
+
+  /attendance/monthly-summary:
+    get:
+      summary: Get Monthly Attendance Summary and Calendar Data
+      operationId: getMonthlyAttendanceSummary
+      tags:
+        - Attendance
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          description: Unique identifier of the user
+          schema:
+            type: string
+          example: "usr_7f3a92bc"
+        - name: month
+          in: query
+          required: true
+          description: Target month (1-12)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          example: 1
+        - name: year
+          in: query
+          required: true
+          description: Target year
+          schema:
+            type: integer
+          example: 2026
+      responses:
+        '200':
+          description: Monthly attendance report retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonthlyAttendanceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+    /attendance/team-summary:
+      get:
+        summary: Get Team Attendance Summary & Manager List By Level
+        operationId: getTeamAttendanceSummary
+        tags:
+          - Attendance
+        security:
+          - BearerAuth: [ ]
+        parameters:
+          - name: levelKey
+            in: query
+            required: true
+            description: Target level key selected from hierarchy tabs (e.g., DIVISION, REGION, AREA, TERRITORY)
+            schema:
+              type: string
+            example: "DIVISION"
+          - name: searchQuery
+            in: query
+            required: false
+            description: Filter by name, location, or designation
+            schema:
+              type: string
+            example: "Sarah"
+          - name: page
+            in: query
+            required: false
+            schema:
+              type: integer
+              default: 1
+            example: 1
+          - name: limit
+            in: query
+            required: false
+            schema:
+              type: integer
+              default: 10
+            example: 20
+        responses:
+          '200':
+            description: Team attendance report retrieved successfully
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/TeamAttendanceSummaryResponse'
+
+  /attendance/team-summary:
+    get:
+      summary: Get Team Attendance Summary & Manager List By Level
+      operationId: getTeamAttendanceSummary
+      tags:
+        - Attendance
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - name: levelKey
+          in: query
+          required: true
+          description: Target level key selected from hierarchy tabs (e.g., DIVISION, REGION, AREA, TERRITORY)
+          schema:
+            type: string
+          example: "DIVISION"
+        - name: searchQuery
+          in: query
+          required: false
+          description: Filter by name, location, or designation
+          schema:
+            type: string
+          example: "Sarah"
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+          example: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+          example: 20
+      responses:
+        '200':
+          description: Team attendance report retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamAttendanceSummaryResponse'
+
+
 components:
   responses:
     UnauthorizedError:
       description: Invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadRequestError:
+      description: Invalid query parameters supplied
       content:
         application/json:
           schema:
@@ -329,3 +482,212 @@ components:
           properties:
             message:
               example: "Your password has been reset successfully. Please log in with your new password."
+
+    # --- HIERARCHY SCHEMAS ---
+    HierarchyLevelItem:
+      type: object
+      required:
+        - levelKey
+        - levelName
+        - presentCount
+        - totalCount
+      properties:
+        levelKey:
+          type: string
+          description: Identifier string used as request parameter for filtering
+          enum: [ DIVISION, REGION, AREA, TERRITORY ]
+          example: "DIVISION"
+        levelName:
+          type: string
+          description: Display label for UI tab
+          example: "Division"
+        presentCount:
+          type: integer
+          description: Present count for tab badge UI (e.g., 2)
+          example: 2
+        totalCount:
+          type: integer
+          description: Total team members count for tab badge UI (e.g., 20)
+          example: 20
+
+    HierarchyLevelsData:
+      type: object
+      required:
+        - currentUserRole
+        - levels
+      properties:
+        currentUserRole:
+          type: string
+          example: "NATIONAL_MANAGER"
+        levels:
+          type: array
+          items:
+            $ref: '#/components/schemas/HierarchyLevelItem'
+
+    HierarchyLevelsResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/HierarchyLevelsData'
+
+    # --- ATTENDANCE SCHEMAS ---
+    AttendanceSummaryStats:
+      type: object
+      required:
+        - attendancePercentage
+        - presentDays
+        - lateDays
+        - leaveDays
+        - absentDays
+      properties:
+        attendancePercentage:
+          type: number
+          format: float
+          description: Total attendance percentage for the month
+          example: 75.0
+        presentDays:
+          type: integer
+          example: 12
+        lateDays:
+          type: integer
+          example: 2
+        leaveDays:
+          type: integer
+          example: 1
+        absentDays:
+          type: integer
+          example: 1
+
+    DailyAttendanceStatus:
+      type: object
+      required:
+        - date
+        - status
+      properties:
+        date:
+          type: string
+          format: date
+          description: Full date string (YYYY-MM-DD)
+          example: "2026-01-01"
+        status:
+          type: string
+          description: Attendance state for the day
+          enum: [ PRESENT, LATE, LEAVE, ABSENT, HOLIDAY ]
+          example: "PRESENT"
+        statusId:
+          type: integer
+          description: Numeric code mapping (0=ABSENT, 1=PRESENT, 2=LATE, 3=LEAVE, 4=HOLIDAY)
+          example: 1
+
+    MonthlyAttendanceData:
+      type: object
+      required:
+        - summary
+        - calendar
+      properties:
+        summary:
+          $ref: '#/components/schemas/AttendanceSummaryStats'
+        calendar:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyAttendanceStatus'
+
+    MonthlyAttendanceResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Monthly attendance report retrieved successfully."
+            data:
+              $ref: '#/components/schemas/MonthlyAttendanceData'
+
+    # --- TEAM ATTENDANCE SCHEMAS ---
+    TeamAttendanceStats:
+      type: object
+      required:
+        - total
+        - present
+        - late
+        - leave
+        - absent
+      properties:
+        total:
+          type: integer
+          example: 20
+        present:
+          type: integer
+          example: 4
+        late:
+          type: integer
+          example: 2
+        leave:
+          type: integer
+          example: 2
+        absent:
+          type: integer
+          example: 1
+
+    ManagerAttendanceListItem:
+      type: object
+      required:
+        - userId
+        - fullName
+        - designation
+        - locationPath
+        - status
+      properties:
+        userId:
+          type: string
+          example: "usr_101"
+        fullName:
+          type: string
+          example: "Sarah Johnson"
+        designation:
+          type: string
+          example: "Sales Manager"
+        profilePictureUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://cdn.example.com/avatars/usr_101.jpg"
+        locationPath:
+          type: string
+          description: Breadcrumb location hierarchy (e.g., Region / Area / Territory)
+          example: "North / Metro / Zone A"
+        status:
+          type: string
+          enum: [ PRESENT, LATE, LEAVE, ABSENT ]
+          example: "PRESENT"
+        checkInTime:
+          type: string
+          nullable: true
+          description: Formatted check-in time if present or late
+          example: "09:05 AM"
+
+    TeamAttendanceSummaryData:
+      type: object
+      required:
+        - levelKey
+        - summary
+        - managerList
+      properties:
+        levelKey:
+          type: string
+          example: "DIVISION"
+        summary:
+          $ref: '#/components/schemas/TeamAttendanceStats'
+        managerList:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagerAttendanceListItem'
+
+    TeamAttendanceSummaryResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TeamAttendanceSummaryData'
