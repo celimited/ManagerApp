@@ -15,12 +15,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,30 +30,51 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.celimited.manager.component.CornerRoundTextField
+import org.celimited.manager.component.LoadingOverlay
 import org.celimited.manager.component.PrimaryButton
 import manager.composeapp.generated.resources.Res
 import manager.composeapp.generated.resources.ic_app_logo
 import org.jetbrains.compose.resources.painterResource
+import org.koin.compose.viewmodel.koinViewModel
 
 
 @Composable
-@Preview
 fun LoginRoute(
-    onLogin:() -> Unit,
-    onForgotPasswordClick: () -> Unit
+    onLogin: () -> Unit,
+    onForgotPasswordClick: () -> Unit,
+    viewModel: LoginViewModel = koinViewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        viewModel.uiEffect.collect { effect ->
+            when (effect) {
+                is LoginUiEffect.NavigateToHome -> onLogin()
+                is LoginUiEffect.ShowError -> snackbarHostState.showSnackbar(effect.message)
+            }
+        }
+    }
+
+    LoadingOverlay(isVisible = uiState.isLoading)
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets.systemBars
+        contentWindowInsets = WindowInsets.systemBars,
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
 
         LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            onLogin,
-            onForgotPasswordClick
+            uiState = uiState,
+            onLoginIdChanged = viewModel::onLoginIdChanged,
+            onPasswordChanged = viewModel::onPasswordChanged,
+            onLoginClicked = viewModel::onLoginClicked,
+            onForgotPasswordClick = onForgotPasswordClick
         )
     }
 }
@@ -60,7 +82,10 @@ fun LoginRoute(
 @Composable
 fun LoginScreen(
     modifier: Modifier = Modifier,
-    onLogin: () -> Unit,
+    uiState: LoginUiState,
+    onLoginIdChanged: (String) -> Unit,
+    onPasswordChanged: (String) -> Unit,
+    onLoginClicked: () -> Unit,
     onForgotPasswordClick: () -> Unit
 ) {
 
@@ -84,7 +109,7 @@ fun LoginScreen(
             alignment = Alignment.Center
         )
 
-        val modifier = Modifier
+        val fieldModifier = Modifier
             .fillMaxWidth()
 
         Text(
@@ -93,12 +118,10 @@ fun LoginScreen(
             color = Color.Black
         )
 
-        var loginId by rememberSaveable { mutableStateOf("") }
-
         CornerRoundTextField(
-            value = loginId,
-            onValueChange = { loginId = it },
-            modifier = modifier,
+            value = uiState.loginId,
+            onValueChange = onLoginIdChanged,
+            modifier = fieldModifier,
             hint = "Enter your login ID",
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
@@ -113,12 +136,10 @@ fun LoginScreen(
             modifier = Modifier.padding(top = 24.dp)
         )
 
-        var password by rememberSaveable { mutableStateOf("") }
-
         CornerRoundTextField(
-            value = password,
-            onValueChange = { password = it },
-            modifier = modifier,
+            value = uiState.password,
+            onValueChange = onPasswordChanged,
+            modifier = fieldModifier,
             hint = "Enter your password",
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
@@ -138,14 +159,25 @@ fun LoginScreen(
         )
 
         PrimaryButton(
-            text = "Login",
-            onClick = {
-                onLogin()
-            },
+            text = if (uiState.isLoading) "Logging in..." else "Login",
+            onClick = onLoginClicked,
+            enabled = !uiState.isLoading,
             containerColor = Color(0xFF582FFF),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 40.dp)
         )
     }
+}
+
+@Composable
+@Preview (showBackground = true, showSystemUi = true)
+private fun LoginScreenPreview() {
+    LoginScreen(
+        uiState = LoginUiState(),
+        onLoginIdChanged = {},
+        onPasswordChanged = {},
+        onLoginClicked = {},
+        onForgotPasswordClick = {}
+    )
 }

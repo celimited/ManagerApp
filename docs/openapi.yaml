@@ -691,3 +691,6 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/TeamAttendanceSummaryData'
+
+              http://localhost:63342/Manager/docs/index:
+                html?_ijt=fbepujmr8mrnvr9hkonhetd7lm&_ij_reload=RELOAD_ON_SAVE#/
