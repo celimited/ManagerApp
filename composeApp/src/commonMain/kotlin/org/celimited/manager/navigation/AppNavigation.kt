@@ -11,6 +11,7 @@ import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import org.celimited.manager.component.BottomNavigation
 import org.celimited.manager.component.MainContainer
+import org.celimited.manager.feature.aiSalesReport.AISalesReportRoute
 import org.celimited.manager.feature.approval.ApprovalsRoute
 import org.celimited.manager.feature.attendance.AttendanceLeaveRoute
 import org.celimited.manager.feature.forgotPassword.ForgotPasswordRoute
@@ -35,6 +36,7 @@ fun AppNavigation(){
                     subclass(Screen.ResetPassword::class, Screen.ResetPassword.serializer())
                     subclass(Screen.Otp::class, Screen.Otp.serializer())
                     subclass(Screen.Attendance::class, Screen.Attendance.serializer())
+                    subclass(Screen.AISalesReport::class, Screen.AISalesReport.serializer())
                 }
             }
         },
@@ -50,6 +52,8 @@ fun AppNavigation(){
                     is Screen.Login -> {
                         LoginRoute(
                             onLogin = {
+                                println("Login page")
+                                backStack.clear()
                                 backStack.add(Screen.Home)
                             },
                             onForgotPasswordClick = {
@@ -78,6 +82,9 @@ fun AppNavigation(){
                         MainContainer(
                             onAttendanceCardClick = {
                                 backStack.add(Screen.Attendance)
+                            },
+                            onAISalesReportClick = {
+                                backStack.add(Screen.AISalesReport)
                             }
                         )
                     }
@@ -97,6 +104,18 @@ fun AppNavigation(){
                             },
                             teamAttendanceClick = {
                                 backStack.add(Screen.TeamAttendance)
+                            }
+                        )
+                    }
+
+                    is Screen.AISalesReport -> {
+                        AISalesReportRoute (
+                            onBackClick = {
+                                backStack.removeLast()
+                            },
+                            onSessionExpired = {
+                                backStack.clear()
+                                backStack.add(Screen.Login)
                             }
                         )
                     }

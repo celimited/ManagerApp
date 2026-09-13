@@ -5,6 +5,6 @@ import org.koin.core.module.Module
 
 fun initKoin(platformModules: List<Module>) {
     startKoin {
-        modules(platformModules + commonModule + networkModule + loginModule)
+        modules(platformModules + commonModule + networkModule + loginModule + homeModule + aiSalesReportModule)
     }
 }

@@ -18,6 +18,7 @@ import org.celimited.manager.feature.retailVisit.RetailVisitRoute
 
 @Composable
 fun MainContainer(
+    onAISalesReportClick: () -> Unit,
     onAttendanceCardClick: () -> Unit
 ) {
 
@@ -38,7 +39,8 @@ fun MainContainer(
                 0 -> ApprovalsRoute()
                 1 -> OrderStatusRoute()
                 2 -> HomeRoute(
-                    onAttendanceCardClick = onAttendanceCardClick
+                    onAISalesReportClick = onAISalesReportClick,
+                    onAttendanceCardClick = onAttendanceCardClick,
                 )
                 3 -> RetailVisitRoute()
                 4 -> MenuRoute()

@@ -1,6 +1,8 @@
 package org.celimited.manager.feature.home
 
 import androidx.compose.foundation.Image
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.koin.compose.viewmodel.koinViewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -73,8 +75,12 @@ import org.jetbrains.compose.resources.painterResource
 
 @Composable
 fun HomeRoute(
-    onAttendanceCardClick: () -> Unit
+    onAISalesReportClick: () -> Unit,
+    onAttendanceCardClick: () -> Unit,
+    viewModel: HomeViewModel = koinViewModel()
 ){
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars
@@ -84,13 +90,22 @@ fun HomeRoute(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            onAttendanceCardClick
+            onAttendanceCardClick = onAttendanceCardClick,
+            onAISalesReportClick = onAISalesReportClick,
+            userName = uiState.userName,
+            userRole = uiState.userRole
         )
     }
 }
 
 @Composable
-fun HomeScreen(modifier: Modifier, onAttendanceCardClick: () -> Unit) {
+fun HomeScreen(
+    modifier: Modifier,
+    onAttendanceCardClick: () -> Unit,
+    onAISalesReportClick: () -> Unit,
+    userName: String,
+    userRole: String
+) {
 
     TopBackground()
 
@@ -98,14 +113,16 @@ fun HomeScreen(modifier: Modifier, onAttendanceCardClick: () -> Unit) {
         modifier = modifier
             .fillMaxSize()
     ){
-        TopProfile()
+        TopProfile(name = userName, role = userRole)
         PendingApprovalsSection()
 
         Column(
             modifier = Modifier
                 .verticalScroll(rememberScrollState())
         ) {
-            AISalesReportSection()
+            AISalesReportSection(
+                onAISalesReportClick = onAISalesReportClick
+            )
             MyAttendanceSection(
                 onAttendanceCardClick = onAttendanceCardClick
             )
@@ -142,7 +159,7 @@ fun TopBackground(){
 }
 
 @Composable
-fun TopProfile(){
+fun TopProfile(name: String, role: String){
     Row(
         modifier = Modifier.fillMaxWidth()
             .padding(top = 24.dp, start = 12.dp, end = 12.dp),
@@ -161,7 +178,7 @@ fun TopProfile(){
         ){
 
             Text(
-                text = "Alex",
+                text = name,
                 color = Color.White,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
@@ -169,7 +186,7 @@ fun TopProfile(){
             )
 
             Text(
-                text = "Regional State Manager",
+                text = role,
                 color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
@@ -288,7 +305,9 @@ fun PendingApprovalsSection () {
 }
 
 @Composable
-fun AISalesReportSection() {
+fun AISalesReportSection(
+    onAISalesReportClick: () -> Unit
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -302,7 +321,7 @@ fun AISalesReportSection() {
                     )
                 )
             )
-            .clickable { }
+            .clickable { onAISalesReportClick() }
             .padding(horizontal = 14.dp, vertical = 14.dp)
     ) {
         Row(

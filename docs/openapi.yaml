@@ -376,6 +376,7 @@ components:
           example: "dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4..."
         tokenType:
           type: string
+          nullable: true
           example: "Bearer"
         expiresIn:
           type: integer

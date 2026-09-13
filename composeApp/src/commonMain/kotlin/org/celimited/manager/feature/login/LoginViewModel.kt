@@ -46,6 +46,7 @@ class LoginViewModel(
                     is DataResult.Loading -> _uiState.update { it.copy(isLoading = true) }
                     is DataResult.Success -> {
                         _uiState.update { it.copy(isLoading = false) }
+                        println("Login success")
                         sendEffect(LoginUiEffect.NavigateToHome)
                     }
                     is DataResult.Error -> {

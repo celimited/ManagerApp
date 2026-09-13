@@ -52,6 +52,7 @@ kotlin {
             implementation(libs.ktor.serialization.kotlinxJson)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.collections.immutable)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)

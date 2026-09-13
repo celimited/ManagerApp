@@ -23,26 +23,41 @@ suspend fun <T> safeApiCall(block: suspend () -> ApiEnvelope<T>): DataResult<T> 
         } else {
             DataResult.Error(AppError.Business(envelope.message ?: "Request failed"))
         }
-    } catch (e: ClientRequestException) {
-        val message = e.response.apiMessage()
-        if (e.response.status == HttpStatusCode.Unauthorized) {
-            DataResult.Error(AppError.Unauthorized(message))
-        } else {
-            DataResult.Error(AppError.Server(e.response.status.value, message))
-        }
-    } catch (e: ServerResponseException) {
-        DataResult.Error(AppError.Server(e.response.status.value, e.response.apiMessage()))
-    } catch (e: HttpRequestTimeoutException) {
-        DataResult.Error(AppError.Timeout)
-    } catch (e: SerializationException) {
-        DataResult.Error(AppError.Serialization(e.message))
-    } catch (e: IOException) {
-        DataResult.Error(AppError.NoConnection)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        DataResult.Error(AppError.Unknown(e.message))
+        DataResult.Error(e.toAppError())
     }
+}
+
+/**
+ * Like [safeApiCall], but for endpoints that return the response body directly
+ * instead of wrapping it in the app's [ApiEnvelope] shape.
+ */
+suspend fun <T> safeRawApiCall(block: suspend () -> T): DataResult<T> {
+    return try {
+        DataResult.Success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        DataResult.Error(e.toAppError())
+    }
+}
+
+private suspend fun Exception.toAppError(): AppError = when (this) {
+    is ClientRequestException -> {
+        val message = response.apiMessage()
+        if (response.status == HttpStatusCode.Unauthorized) {
+            AppError.Unauthorized(message)
+        } else {
+            AppError.Server(response.status.value, message)
+        }
+    }
+    is ServerResponseException -> AppError.Server(response.status.value, response.apiMessage())
+    is HttpRequestTimeoutException -> AppError.Timeout
+    is SerializationException -> AppError.Serialization(message)
+    is IOException -> AppError.NoConnection
+    else -> AppError.Unknown(message)
 }
 
 /** Pulls the API's own "message" field out of an error response body, if present. */

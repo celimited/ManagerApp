@@ -8,6 +8,15 @@ import org.koin.core.module.Module
 import org.koin.dsl.module
 
 fun iosPlatformModule(): Module = module {
-    single<HttpClientEngine> { Darwin.create() }
+    single<HttpClientEngine> {
+        Darwin.create {
+            // Darwin's own default session timeout is shorter than Ktor's HttpTimeout plugin
+            // deadline (HttpClientFactory.kt) and would otherwise fire first.
+            configureSession {
+                timeoutIntervalForRequest = 45.0
+                timeoutIntervalForResource = 45.0
+            }
+        }
+    }
     single<DeviceInfoProvider> { IosDeviceInfoProvider() }
 }

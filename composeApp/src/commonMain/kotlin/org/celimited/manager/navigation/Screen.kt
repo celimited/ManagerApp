@@ -28,5 +28,7 @@ sealed interface Screen: NavKey {
     @Serializable
     data object Attendance: NavKey, Screen
     @Serializable
+    data object AISalesReport: NavKey, Screen
+    @Serializable
     data object TeamAttendance: NavKey, Screen
 }

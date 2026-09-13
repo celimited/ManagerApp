@@ -10,7 +10,7 @@ import org.koin.dsl.module
 
 val loginModule = module {
     single { AuthRemoteDataSource(get()) }
-    single<AuthRepository> { AuthRepositoryImpl(get(), get()) }
+    single<AuthRepository> { AuthRepositoryImpl(get(), get(), get()) }
     factory { LoginUseCase(get(), get()) }
     viewModel { LoginViewModel(get(), get()) }
 }
