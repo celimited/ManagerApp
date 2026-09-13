@@ -256,6 +256,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/TeamAttendanceSummaryResponse'
 
+  /attendance/save-attendance:
+    post:
+      summary: Save Attendance Check-in
+      operationId: saveAttendance
+      tags:
+        - Attendance
+      security:
+        - BearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveAttendanceRequest'
+      responses:
+        '200':
+          description: Attendance saved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaveAttendanceResponse'
+
   /AIReportGenerator/AskOpenAI:
     post:
       summary: Ask AI for a Sales Report
@@ -825,3 +847,62 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Distributor'
+
+    # --- SAVE ATTENDANCE SCHEMAS ---
+    SaveAttendanceRequest:
+      type: object
+      required:
+        - id
+        - salespointId
+        - latitude
+        - longitude
+        - image
+        - deviceName
+        - deviceModel
+        - osVersion
+        - appVersion
+        - deviceUUID
+        - networkType
+      properties:
+        id:
+          type: integer
+          example: 1
+        salespointId:
+          type: integer
+          example: 5001
+        latitude:
+          type: string
+          example: "23.780636"
+        longitude:
+          type: string
+          example: "90.279541"
+        image:
+          type: string
+          description: Base64-encoded check-in photo
+          example: "/9j/4AAQSkZJRgABAQAAAQABAAD..."
+        deviceName:
+          type: string
+          example: "Galaxy S21"
+        deviceModel:
+          type: string
+          example: "SM-G991B"
+        osVersion:
+          type: string
+          example: "Android 14"
+        appVersion:
+          type: string
+          example: "2.1.0"
+        deviceUUID:
+          type: string
+          example: "d1f2a3b4-uuid"
+        networkType:
+          type: string
+          example: "WIFI"
+
+    SaveAttendanceResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Attendance saved successfully."
