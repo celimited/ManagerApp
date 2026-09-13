@@ -3,6 +3,9 @@ info:
   title: Manager App API Documentation
   version: 1.0.0
 
+servers:
+  - url: http://210.4.65.222/SupervisorApp/api/v1
+    description: Test server
 
 paths:
   /auth/login:
@@ -253,6 +256,51 @@ paths:
               schema:
                 $ref: '#/components/schemas/TeamAttendanceSummaryResponse'
 
+  /AIReportGenerator/AskOpenAI:
+    post:
+      summary: Ask AI for a Sales Report
+      operationId: askOpenAI
+      tags:
+        - AI Sales Report
+      security:
+        - BearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskOpenAiRequest'
+      responses:
+        '200':
+          description: AI-generated report data retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AskOpenAiResponse'
+
+  /distributors:
+    get:
+      summary: Get Distributors for a User
+      operationId: getDistributors
+      tags:
+        - Distributor
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          description: Unique identifier of the user
+          schema:
+            type: string
+          example: "usr_7f3a92bc"
+      responses:
+        '200':
+          description: Distributor list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistributorListResponse'
 
 components:
   responses:
@@ -693,5 +741,87 @@ components:
             data:
               $ref: '#/components/schemas/TeamAttendanceSummaryData'
 
-              http://localhost:63342/Manager/docs/index:
-                html?_ijt=fbepujmr8mrnvr9hkonhetd7lm&_ij_reload=RELOAD_ON_SAVE#/
+    # --- AI SALES REPORT SCHEMAS ---
+    AskOpenAiRequest:
+      type: object
+      required:
+        - userID
+        - role
+        - userPrompt
+      properties:
+        userID:
+          type: string
+          example: "usr_7f3a92bc"
+        role:
+          type: string
+          example: "NATIONAL_MANAGER"
+        userPrompt:
+          type: string
+          example: "Show me last month's top 5 distributors by sales"
+
+    AskOpenAiResponse:
+      type: object
+      description: >
+        Standalone response envelope (does not use BaseApiResponse — matches the
+        actual backend contract, which has no `success` field). `data` is a
+        dynamic tabular result: each item is a row represented as a free-form
+        column-name/value map, with no fixed schema.
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          example:
+            - Distributor: "ABC Distribution"
+              TotalSales: "125000"
+            - Distributor: "XYZ Traders"
+              TotalSales: "98000"
+        statusCode:
+          type: integer
+          example: 200
+        message:
+          type: string
+          nullable: true
+          example: "Report generated successfully."
+
+    # --- DISTRIBUTOR SCHEMAS ---
+    Distributor:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: true
+          example: 101
+        name:
+          type: string
+          nullable: true
+          example: "ABC Distribution"
+        latitude:
+          type: string
+          nullable: true
+          example: "23.780636"
+        longitude:
+          type: string
+          nullable: true
+          example: "90.279541"
+        code:
+          type: string
+          nullable: true
+          example: "DIST-101"
+        address:
+          type: string
+          nullable: true
+          example: "123 Main Road, Dhaka"
+
+    DistributorListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Distributors retrieved successfully."
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Distributor'
