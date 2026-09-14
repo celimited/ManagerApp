@@ -5,8 +5,9 @@ import org.celimited.manager.data.remote.dto.aiSalesReport.AIReportResponseDto
 import org.celimited.manager.model.aiSalesReport.SalesReportResult
 
 fun AIReportResponseDto.toDomain(): SalesReportResult {
-    val columns = data.firstOrNull()?.keys?.toList().orEmpty()
-    val rows = data.map { row ->
+    val dataRows = data.orEmpty()
+    val columns = dataRows.firstOrNull()?.keys?.toList().orEmpty()
+    val rows = dataRows.map { row ->
         columns.map { column -> row[column]?.jsonPrimitive?.content.orEmpty() }
     }
     return SalesReportResult(columns = columns, rows = rows)

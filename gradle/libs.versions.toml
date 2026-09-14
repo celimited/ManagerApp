@@ -18,8 +18,10 @@ dateTime = "0.7.1"
 koin = "4.0.2"
 ktor = "3.0.3"
 kotlinxSerializationJson = "1.7.3"
-kotlinxCoroutines = "1.9.0"
+kotlinxCoroutines = "1.10.2"
 kotlinxCollectionsImmutable = "0.3.8"
+filekit = "0.14.1"
+koalaplot = "0.11.2"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -53,6 +55,10 @@ ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "kto
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinxCollectionsImmutable" }
+filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
+filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }
+filekit-dialogs-compose = { module = "io.github.vinceglb:filekit-dialogs-compose", version.ref = "filekit" }
+koalaplot-core = { module = "io.github.koalaplot:koalaplot-core", version.ref = "koalaplot" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

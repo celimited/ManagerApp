@@ -9,6 +9,10 @@ data class AISalesReportUiState(
     val promptInput: String = "",
     val isLoading: Boolean = false,
     val result: ReportResultUi? = null,
+    val chartData: ChartDataUi? = null,
+    val viewFormat: ResultViewFormat = ResultViewFormat.Table,
+    val selectedLabelColumnIndex: Int = 0,
+    val selectedMetricIndex: Int = 0,
     val errorMessage: String? = null
 )
 

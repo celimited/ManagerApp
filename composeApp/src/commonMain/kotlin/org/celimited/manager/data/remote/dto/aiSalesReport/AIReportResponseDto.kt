@@ -5,7 +5,7 @@ import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class AIReportResponseDto(
-    val data: List<JsonObject> = emptyList(),
+    val data: List<JsonObject>? = null,
     val statusCode: Int = 0,
     val message: String? = null
 )

@@ -852,21 +852,11 @@ components:
     SaveAttendanceRequest:
       type: object
       required:
-        - id
         - salespointId
         - latitude
         - longitude
-        - image
-        - deviceName
-        - deviceModel
-        - osVersion
-        - appVersion
-        - deviceUUID
-        - networkType
+        - deviceInfo
       properties:
-        id:
-          type: integer
-          example: 1
         salespointId:
           type: integer
           example: 5001
@@ -878,26 +868,18 @@ components:
           example: "90.279541"
         image:
           type: string
-          description: Base64-encoded check-in photo
+          description: Base64-encoded check-in photo (optional)
           example: "/9j/4AAQSkZJRgABAQAAAQABAAD..."
-        deviceName:
+        reason:
           type: string
-          example: "Galaxy S21"
-        deviceModel:
+          description: Optional reason for check-in (e.g. late arrival)
+          example: "Traffic delay"
+        remarks:
           type: string
-          example: "SM-G991B"
-        osVersion:
-          type: string
-          example: "Android 14"
-        appVersion:
-          type: string
-          example: "2.1.0"
-        deviceUUID:
-          type: string
-          example: "d1f2a3b4-uuid"
-        networkType:
-          type: string
-          example: "WIFI"
+          description: Optional remarks
+          example: "Visited client site first"
+        deviceInfo:
+          $ref: '#/components/schemas/DeviceInfo'
 
     SaveAttendanceResponse:
       allOf:

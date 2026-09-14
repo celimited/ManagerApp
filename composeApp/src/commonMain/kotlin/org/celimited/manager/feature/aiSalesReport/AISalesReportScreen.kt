@@ -3,6 +3,7 @@ package org.celimited.manager.feature.aiSalesReport
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,13 +23,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +43,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.tooling.preview.Preview
+import io.github.vinceglb.filekit.dialogs.FileKitDialogSettings
+import io.github.vinceglb.filekit.dialogs.compose.rememberFileSaverLauncher
+import io.github.vinceglb.filekit.writeString
+import kotlinx.coroutines.launch
 import org.celimited.manager.component.TopBar
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -47,10 +58,29 @@ fun AISalesReportRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+    val scope = rememberCoroutineScope()
+    var pendingCsvContent by remember { mutableStateOf<String?>(null) }
+    val csvSaverLauncher = rememberFileSaverLauncher(
+        dialogSettings = FileKitDialogSettings.createDefault(),
+        onResult = { file ->
+            val content = pendingCsvContent
+            if (file != null && content != null) {
+                scope.launch { file.writeString(content) }
+            }
+        }
+    )
+
     LaunchedEffect(Unit) {
         viewModel.uiEffect.collect { effect ->
             when (effect) {
                 is AISalesReportUiEffect.SessionExpired -> onSessionExpired()
+                is AISalesReportUiEffect.DownloadCsv -> {
+                    pendingCsvContent = effect.csvContent
+                    csvSaverLauncher.launch(
+                        suggestedName = effect.suggestedName,
+                        defaultExtension = "csv"
+                    )
+                }
             }
         }
     }
@@ -71,7 +101,11 @@ fun AISalesReportRoute(
                 .padding(padding),
             uiState = uiState,
             onPromptChanged = viewModel::onPromptChanged,
-            onSubmitClicked = viewModel::onSubmitClicked
+            onSubmitClicked = viewModel::onSubmitClicked,
+            onDownloadClicked = viewModel::onDownloadClicked,
+            onViewFormatSelected = viewModel::onViewFormatSelected,
+            onLabelColumnSelected = viewModel::onLabelColumnSelected,
+            onMetricSelected = viewModel::onMetricSelected
         )
     }
 }
@@ -81,7 +115,11 @@ fun AISalesReportScreen(
     modifier: Modifier = Modifier,
     uiState: AISalesReportUiState,
     onPromptChanged: (String) -> Unit,
-    onSubmitClicked: () -> Unit
+    onSubmitClicked: () -> Unit,
+    onDownloadClicked: () -> Unit,
+    onViewFormatSelected: (ResultViewFormat) -> Unit,
+    onLabelColumnSelected: (Int) -> Unit,
+    onMetricSelected: (Int) -> Unit
 ) {
     // Shared across the header row and every data row so they scroll horizontally in lockstep.
     val horizontalScrollState = rememberScrollState()
@@ -112,10 +150,51 @@ fun AISalesReportScreen(
                 ReportErrorCard(message = uiState.errorMessage, onRetry = onSubmitClicked)
             }
 
-            uiState.result != null -> reportResultItems(
-                result = uiState.result,
-                horizontalScrollState = horizontalScrollState
-            )
+            uiState.result != null -> {
+                if (uiState.result.rows.isNotEmpty()) {
+                    item {
+                        OutlinedButton(
+                            onClick = onDownloadClicked,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        ) {
+                            Text("Download CSV")
+                        }
+
+                        ViewFormatSelector(
+                            chartData = uiState.chartData,
+                            selected = uiState.viewFormat,
+                            onSelected = onViewFormatSelected
+                        )
+
+                        if (uiState.viewFormat != ResultViewFormat.Table && uiState.chartData != null) {
+                            ChartColumnSelectors(
+                                chartData = uiState.chartData,
+                                selectedLabelColumnIndex = uiState.selectedLabelColumnIndex,
+                                selectedMetricIndex = uiState.selectedMetricIndex,
+                                onLabelColumnSelected = onLabelColumnSelected,
+                                onMetricSelected = onMetricSelected
+                            )
+                        }
+                    }
+                }
+
+                val chartData = uiState.chartData
+                if (uiState.viewFormat == ResultViewFormat.Table || chartData == null) {
+                    reportResultItems(
+                        result = uiState.result,
+                        horizontalScrollState = horizontalScrollState
+                    )
+                } else {
+                    item {
+                        ReportChart(
+                            format = uiState.viewFormat,
+                            chartData = chartData,
+                            labelColumnIndex = uiState.selectedLabelColumnIndex,
+                            metricIndex = uiState.selectedMetricIndex
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -152,10 +231,129 @@ private fun PromptSection(
             enabled = !uiState.isLoading && uiState.promptInput.isNotBlank(),
             modifier = Modifier.align(Alignment.End)
         ) {
-            Text("Ask")
+            Text("Submit")
         }
 
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun ViewFormatSelector(
+    chartData: ChartDataUi?,
+    selected: ResultViewFormat,
+    onSelected: (ResultViewFormat) -> Unit
+) {
+    val formats = buildList {
+        add(ResultViewFormat.Table)
+        if (chartData != null) {
+            add(ResultViewFormat.Bar)
+            add(ResultViewFormat.Line)
+            if (chartData.allowsPie) add(ResultViewFormat.Pie)
+        }
+    }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        formats.forEach { format ->
+            FilterChip(
+                selected = format == selected,
+                onClick = { onSelected(format) },
+                label = { Text(format.name) }
+            )
+        }
+    }
+
+    if (chartData == null) {
+        Text(
+            text = "This result has no numeric column to chart.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF6B7280),
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun ChartColumnSelectors(
+    chartData: ChartDataUi,
+    selectedLabelColumnIndex: Int,
+    selectedMetricIndex: Int,
+    onLabelColumnSelected: (Int) -> Unit,
+    onMetricSelected: (Int) -> Unit
+) {
+    if (chartData.labelColumns.size > 1) {
+        ChipRow(
+            title = "Group by",
+            options = chartData.labelColumns.map { it.name },
+            selectedIndex = selectedLabelColumnIndex,
+            onSelected = onLabelColumnSelected
+        )
+    }
+
+    if (chartData.metrics.size > 1) {
+        ChipRow(
+            title = "Metric",
+            options = chartData.metrics.map { it.name },
+            selectedIndex = selectedMetricIndex,
+            onSelected = onMetricSelected
+        )
+    }
+}
+
+@Composable
+private fun ChipRow(
+    title: String,
+    options: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit
+) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelMedium,
+        color = Color(0xFF6B7280)
+    )
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        options.forEachIndexed { index, option ->
+            FilterChip(
+                selected = index == selectedIndex,
+                onClick = { onSelected(index) },
+                label = { Text(option) }
+            )
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun ReportChart(
+    format: ResultViewFormat,
+    chartData: ChartDataUi,
+    labelColumnIndex: Int,
+    metricIndex: Int
+) {
+    val labelColumn = chartData.labelColumns.getOrNull(labelColumnIndex)
+        ?: chartData.labelColumns.first()
+    val metric = chartData.metrics.getOrNull(metricIndex) ?: chartData.metrics.first()
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = metric.name,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(8.dp))
+
+        when (format) {
+            ResultViewFormat.Bar -> ReportBarChart(labelColumn.labels, metric.values)
+            ResultViewFormat.Line -> ReportLineChart(labelColumn.labels, metric.values)
+            ResultViewFormat.Pie -> ReportPieChart(labelColumn.labels, metric.values)
+            ResultViewFormat.Table -> Unit
+        }
     }
 }
 
@@ -228,6 +426,10 @@ private fun AISalesReportScreenPreview() {
     AISalesReportScreen(
         uiState = AISalesReportUiState(),
         onPromptChanged = {},
-        onSubmitClicked = {}
+        onSubmitClicked = {},
+        onDownloadClicked = {},
+        onViewFormatSelected = {},
+        onLabelColumnSelected = {},
+        onMetricSelected = {}
     )
 }
