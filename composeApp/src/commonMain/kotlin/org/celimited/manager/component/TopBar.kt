@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,7 +32,8 @@ import org.jetbrains.compose.resources.painterResource
 fun TopBar(
     title: String,
     onBackClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit = {}
 ) {
     Box(
         modifier = modifier
@@ -43,7 +45,7 @@ fun TopBar(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 10.dp),
+                .padding(start = 10.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
 
@@ -73,6 +75,10 @@ fun TopBar(
                 fontWeight = FontWeight.Bold,
                 color = Color.Black
             )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            actions()
         }
     }
 }

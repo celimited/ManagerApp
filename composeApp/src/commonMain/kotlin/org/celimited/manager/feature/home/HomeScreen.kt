@@ -350,7 +350,7 @@ fun AISalesReportSection(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "AI Sales Reporting",
+                        text = "AI Reporting",
                         color = Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold

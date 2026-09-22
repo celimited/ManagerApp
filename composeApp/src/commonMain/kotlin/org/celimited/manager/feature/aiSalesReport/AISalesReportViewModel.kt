@@ -13,11 +13,15 @@ import kotlinx.coroutines.launch
 import org.celimited.manager.core.common.AppError
 import org.celimited.manager.core.common.DataResult
 import org.celimited.manager.core.common.csv.toCsv
+import org.celimited.manager.core.common.format.formatRelativeTime
 import org.celimited.manager.domain.usecase.aiSalesReport.AskAISalesReportUseCase
+import org.celimited.manager.domain.usecase.aiSalesReport.GetPreviousPromptsUseCase
+import org.celimited.manager.model.aiSalesReport.QueryLog
 import org.celimited.manager.model.aiSalesReport.SalesReportResult
 
 class AISalesReportViewModel(
-    private val askAISalesReportUseCase: AskAISalesReportUseCase
+    private val askAISalesReportUseCase: AskAISalesReportUseCase,
+    private val getPreviousPromptsUseCase: GetPreviousPromptsUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AISalesReportUiState())
@@ -26,16 +30,45 @@ class AISalesReportViewModel(
     private val _uiEffect = Channel<AISalesReportUiEffect>(Channel.BUFFERED)
     val uiEffect = _uiEffect.receiveAsFlow()
 
+    private var hasLoadedPreviousPrompts = false
+
+    init {
+        loadPreviousPrompts()
+    }
+
     fun onPromptChanged(value: String) {
         _uiState.update { it.copy(promptInput = value) }
     }
 
     fun onSubmitClicked() {
-        val prompt = _uiState.value.promptInput.trim()
+        submitPrompt(prompt = _uiState.value.promptInput.trim(), queryLogId = 0)
+    }
+
+    fun onHistoryClicked() {
+        _uiState.update { it.copy(isHistorySheetVisible = true) }
+        if (!hasLoadedPreviousPrompts) {
+            loadPreviousPrompts()
+        }
+    }
+
+    fun onRetryPreviousPrompts() {
+        loadPreviousPrompts()
+    }
+
+    fun onDismissHistorySheet() {
+        _uiState.update { it.copy(isHistorySheetVisible = false) }
+    }
+
+    fun onPreviousPromptSelected(item: QueryLogUi) {
+        _uiState.update { it.copy(promptInput = item.userPrompt, isHistorySheetVisible = false) }
+        submitPrompt(prompt = item.userPrompt, queryLogId = item.queryLogId)
+    }
+
+    private fun submitPrompt(prompt: String, queryLogId: Int) {
         if (prompt.isBlank() || _uiState.value.isLoading) return
 
         viewModelScope.launch {
-            askAISalesReportUseCase(prompt).collect { result ->
+            askAISalesReportUseCase(prompt = prompt, queryLogId = queryLogId).collect { result ->
                 when (result) {
                     is DataResult.Loading -> _uiState.update {
                         it.copy(isLoading = true, errorMessage = null)
@@ -50,7 +83,8 @@ class AISalesReportViewModel(
                             chartData = resultUi.toChartData(),
                             viewFormat = ResultViewFormat.Table,
                             selectedLabelColumnIndex = 0,
-                            selectedMetricIndex = 0
+                            selectedMetricIndex = 0,
+                            usageRemaining = result.data.usageRemaining
                         )
                     }
 
@@ -60,6 +94,42 @@ class AISalesReportViewModel(
                         }
                         _uiState.update {
                             it.copy(isLoading = false, errorMessage = result.error.toUserMessage())
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun loadPreviousPrompts() {
+        if (_uiState.value.isHistoryLoading) return
+
+        viewModelScope.launch {
+            getPreviousPromptsUseCase().collect { result ->
+                when (result) {
+                    is DataResult.Loading -> _uiState.update {
+                        it.copy(isHistoryLoading = true, historyErrorMessage = null)
+                    }
+
+                    is DataResult.Success -> {
+                        hasLoadedPreviousPrompts = true
+                        _uiState.update {
+                            it.copy(
+                                isHistoryLoading = false,
+                                previousPrompts = result.data.logs.map { log -> log.toUi() }.toImmutableList(),
+                                usageRemaining = result.data.usageRemaining
+                            )
+                        }
+                    }
+
+                    is DataResult.Error -> {
+                        if (result.error is AppError.Unauthorized) {
+                            _uiState.update { it.copy(isHistorySheetVisible = false, isHistoryLoading = false) }
+                            sendEffect(AISalesReportUiEffect.SessionExpired)
+                        } else {
+                            _uiState.update {
+                                it.copy(isHistoryLoading = false, historyErrorMessage = result.error.toUserMessage())
+                            }
                         }
                     }
                 }
@@ -93,6 +163,12 @@ class AISalesReportViewModel(
     private fun SalesReportResult.toUi(): ReportResultUi = ReportResultUi(
         columns = columns.toImmutableList(),
         rows = rows.map { it.toImmutableList() }.toImmutableList()
+    )
+
+    private fun QueryLog.toUi(): QueryLogUi = QueryLogUi(
+        queryLogId = queryLogId,
+        userPrompt = userPrompt,
+        executedAt = formatRelativeTime(executedAt)
     )
 
     private fun AppError.toUserMessage(): String = when (this) {

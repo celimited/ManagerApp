@@ -278,6 +278,134 @@ paths:
               schema:
                 $ref: '#/components/schemas/SaveAttendanceResponse'
 
+  /attendance/today-status:
+    get:
+      summary: Get Today's Attendance Status for the Home Popup
+      description: >
+        Returns the user's attendance state for today together with the on-time deadline and the
+        server clock. The app compares `attendanceDeadline` against the device time corrected by the
+        `serverTime` offset to decide whether to show the on-time or late check-in popup; the server
+        still validates late/on-time when `/attendance/save-attendance` is called.
+        Called every time the Home screen is entered (after login and on app reopen).
+      operationId: getTodayAttendanceStatus
+      tags:
+        - Attendance
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          description: Unique identifier of the user
+          schema:
+            type: string
+          example: "usr_7f3a92bc"
+      responses:
+        '200':
+          description: Today's attendance status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodayAttendanceStatusResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /attendance/late-reasons:
+    get:
+      summary: Get Late Attendance Reason List
+      description: >
+        Reason options shown in the late check-in popup. Static reference data — the app fetches it
+        once per session and caches it.
+      operationId: getLateReasons
+      tags:
+        - Attendance
+      security:
+        - BearerAuth: [ ]
+      responses:
+        '200':
+          description: Late reason list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LateReasonListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /attendance/leave-reasons:
+    get:
+      summary: Get Leave Reason List
+      description: >
+        Reason options shown when applying for leave. Static reference data — the app fetches it
+        once per session and caches it.
+      operationId: getLeaveReasons
+      tags:
+        - Attendance
+      security:
+        - BearerAuth: [ ]
+      responses:
+        '200':
+          description: Leave reason list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveReasonListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /attendance/apply-leave:
+    post:
+      summary: Apply for Leave
+      operationId: applyLeave
+      tags:
+        - Attendance
+      security:
+        - BearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyLeaveRequest'
+      responses:
+        '200':
+          description: Leave request submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyLeaveResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+  /geofence-config:
+    get:
+      summary: Get Geofence Configuration
+      description: >
+        Enforcement rule and default allowed distance to apply when the device is outside an
+        attendance location's radius. The app fetches it once per session and caches it; distance
+        is calculated on the device.
+      operationId: getGeofenceConfig
+      tags:
+        - Geofence
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          description: Unique identifier of the user
+          schema:
+            type: string
+          example: "usr_7f3a92bc"
+      responses:
+        '200':
+          description: Geofence configuration retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeofenceConfigResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /AIReportGenerator/AskOpenAI:
     post:
       summary: Ask AI for a Sales Report
@@ -675,6 +803,160 @@ components:
             data:
               $ref: '#/components/schemas/MonthlyAttendanceData'
 
+    # --- TODAY ATTENDANCE STATUS SCHEMAS ---
+    LeaveInfo:
+      type: object
+      required:
+        - fromDate
+        - toDate
+        - leaveType
+        - status
+      properties:
+        fromDate:
+          type: string
+          format: date
+          example: "2026-02-15"
+        toDate:
+          type: string
+          format: date
+          example: "2026-02-18"
+        leaveType:
+          type: string
+          example: "Casual Leave"
+        status:
+          type: string
+          description: APPROVED when the user is on leave, PENDING when the request is awaiting approval
+          enum: [ APPROVED, PENDING ]
+          example: "APPROVED"
+
+    TodayAttendanceStatusData:
+      type: object
+      required:
+        - serverTime
+        - attendanceDeadline
+        - status
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+          description: Server clock at response time, with UTC offset. The app uses it to correct device-clock drift.
+          example: "2026-09-20T09:05:12+06:00"
+        attendanceDeadline:
+          type: string
+          format: date-time
+          description: Last moment for on-time attendance today, with UTC offset. Check-ins after this are late.
+          example: "2026-09-20T09:30:00+06:00"
+        status:
+          type: string
+          description: >
+            NOT_MARKED = show the check-in popup (on-time or late depending on attendanceDeadline);
+            MARKED = no popup; ON_LEAVE = show approved-leave popup; LEAVE_PENDING = show pending-leave popup
+          enum: [ NOT_MARKED, MARKED, ON_LEAVE, LEAVE_PENDING ]
+          example: "NOT_MARKED"
+        checkInStatus:
+          type: string
+          nullable: true
+          description: Present when status is MARKED
+          enum: [ PRESENT, LATE ]
+          example: "PRESENT"
+        leave:
+          nullable: true
+          description: Present when status is ON_LEAVE or LEAVE_PENDING
+          allOf:
+            - $ref: '#/components/schemas/LeaveInfo'
+
+    TodayAttendanceStatusResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Today's attendance status retrieved successfully."
+            data:
+              $ref: '#/components/schemas/TodayAttendanceStatusData'
+
+    # --- LATE REASON SCHEMAS ---
+    LateReason:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+          example: 3
+        name:
+          type: string
+          example: "Illness"
+
+    LateReasonListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Late reason list retrieved successfully."
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/LateReason'
+
+    # --- LEAVE REASON SCHEMAS ---
+    LeaveReason:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "Casual Leave"
+
+    LeaveReasonListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Leave reason list retrieved successfully."
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/LeaveReason'
+
+    # --- GEOFENCE SCHEMAS ---
+    GeofenceConfigData:
+      type: object
+      required:
+        - checkInOption
+        - defaultRadiusMeters
+      properties:
+        checkInOption:
+          type: integer
+          description: >
+            How the app treats a check-in when the device is outside the location's radius:
+            1=Block (reject, do not submit), 2=Warning (ask the user to confirm, then submit),
+            3=Bypass (submit without checking)
+          enum: [ 1, 2, 3 ]
+          example: 2
+        defaultRadiusMeters:
+          type: integer
+          description: Allowed distance from the location's coordinates, used when a location has no radiusMeters
+          example: 50
+
+    GeofenceConfigResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Geofence configuration retrieved successfully."
+            data:
+              $ref: '#/components/schemas/GeofenceConfigData'
+
     # --- TEAM ATTENDANCE SCHEMAS ---
     TeamAttendanceStats:
       type: object
@@ -874,6 +1156,11 @@ components:
           type: string
           description: Optional reason for check-in (e.g. late arrival)
           example: "Traffic delay"
+        lateReasonId:
+          type: integer
+          nullable: true
+          description: Id from /attendance/late-reasons when checking in after attendanceDeadline
+          example: 3
         remarks:
           type: string
           description: Optional remarks
@@ -888,3 +1175,39 @@ components:
           properties:
             message:
               example: "Attendance saved successfully."
+
+    # --- APPLY LEAVE SCHEMAS ---
+    ApplyLeaveRequest:
+      type: object
+      required:
+        - fromDate
+        - toDate
+        - leaveReasonId
+        - deviceInfo
+      properties:
+        fromDate:
+          type: string
+          format: date
+          example: "2026-10-01"
+        toDate:
+          type: string
+          format: date
+          example: "2026-10-03"
+        leaveReasonId:
+          type: integer
+          description: Id from /attendance/leave-reasons
+          example: 2
+        remarks:
+          type: string
+          description: Optional remarks
+          example: "Family function"
+        deviceInfo:
+          $ref: '#/components/schemas/DeviceInfo'
+
+    ApplyLeaveResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Leave request submitted successfully."

@@ -4,7 +4,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class AIReportRequestDto(
-    val userID: String,
-    val role: String,
-    val userPrompt: String
+    val UserID: String,
+    val Role: String,
+    val UserPrompt: String,
+    val QueryLogID: Int
 )

@@ -12,7 +12,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -21,12 +24,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -37,6 +45,8 @@ import org.celimited.manager.component.LoadingOverlay
 import org.celimited.manager.component.PrimaryButton
 import manager.composeapp.generated.resources.Res
 import manager.composeapp.generated.resources.ic_app_logo
+import manager.composeapp.generated.resources.ic_icon_eye
+import manager.composeapp.generated.resources.ic_icon_eye_off
 import org.jetbrains.compose.resources.painterResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -90,6 +100,7 @@ fun LoginScreen(
     onForgotPasswordClick: () -> Unit
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
+    var passwordVisible by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -147,6 +158,19 @@ fun LoginScreen(
             fontFamily = FontFamily.Monospace,
             focusedBorderColor = Color(0xFFCBBFFF),
             unfocusedBorderColor = Color(0xFFCBBFFF),
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = {
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(
+                        painter = painterResource(
+                            if (passwordVisible) Res.drawable.ic_icon_eye_off else Res.drawable.ic_icon_eye
+                        ),
+                        contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
         )
 
         Text(

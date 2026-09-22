@@ -12,11 +12,13 @@ import kotlinx.coroutines.launch
 import org.celimited.manager.core.common.AppError
 import org.celimited.manager.core.common.DataResult
 import org.celimited.manager.core.common.device.DeviceInfoProvider
+import org.celimited.manager.domain.usecase.login.GetSavedLoginIdUseCase
 import org.celimited.manager.domain.usecase.login.LoginUseCase
 
 class LoginViewModel(
     private val loginUseCase: LoginUseCase,
-    private val deviceInfoProvider: DeviceInfoProvider
+    private val deviceInfoProvider: DeviceInfoProvider,
+    private val getSavedLoginIdUseCase: GetSavedLoginIdUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -24,6 +26,14 @@ class LoginViewModel(
 
     private val _uiEffect = Channel<LoginUiEffect>(Channel.BUFFERED)
     val uiEffect = _uiEffect.receiveAsFlow()
+
+    init {
+        viewModelScope.launch {
+            getSavedLoginIdUseCase()?.let { savedLoginId ->
+                _uiState.update { it.copy(loginId = savedLoginId) }
+            }
+        }
+    }
 
     fun onLoginIdChanged(value: String) {
         _uiState.update { it.copy(loginId = value) }

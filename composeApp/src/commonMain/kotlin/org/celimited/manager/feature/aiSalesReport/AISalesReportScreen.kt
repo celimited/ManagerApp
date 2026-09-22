@@ -2,6 +2,8 @@ package org.celimited.manager.feature.aiSalesReport
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,8 +26,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -46,8 +53,13 @@ import androidx.compose.ui.tooling.preview.Preview
 import io.github.vinceglb.filekit.dialogs.FileKitDialogSettings
 import io.github.vinceglb.filekit.dialogs.compose.rememberFileSaverLauncher
 import io.github.vinceglb.filekit.writeString
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.launch
+import manager.composeapp.generated.resources.Res
+import manager.composeapp.generated.resources.ic_icon_clock
+import manager.composeapp.generated.resources.ic_icon_keyboard_next
 import org.celimited.manager.component.TopBar
+import org.jetbrains.compose.resources.painterResource
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -90,8 +102,17 @@ fun AISalesReportRoute(
         contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             TopBar(
-                title = "AI Sales Report",
-                onBackClick = onBackClick
+                title = "AI Report",
+                onBackClick = onBackClick,
+                actions = {
+                    IconButton(onClick = viewModel::onHistoryClicked) {
+                        Icon(
+                            painter = painterResource(Res.drawable.ic_icon_clock),
+                            contentDescription = "Previous prompts",
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
             )
         }
     ) { padding ->
@@ -106,6 +127,17 @@ fun AISalesReportRoute(
             onViewFormatSelected = viewModel::onViewFormatSelected,
             onLabelColumnSelected = viewModel::onLabelColumnSelected,
             onMetricSelected = viewModel::onMetricSelected
+        )
+    }
+
+    if (uiState.isHistorySheetVisible) {
+        PreviousPromptsSheet(
+            isLoading = uiState.isHistoryLoading,
+            prompts = uiState.previousPrompts,
+            errorMessage = uiState.historyErrorMessage,
+            onDismiss = viewModel::onDismissHistorySheet,
+            onRetry = viewModel::onRetryPreviousPrompts,
+            onPromptSelected = viewModel::onPreviousPromptSelected
         )
     }
 }
@@ -207,7 +239,7 @@ private fun PromptSection(
 ) {
     Column {
         Text(
-            text = "Ask a question about your sales data",
+            text = "Ask a question about your data",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
@@ -224,11 +256,20 @@ private fun PromptSection(
             shape = RoundedCornerShape(8.dp)
         )
 
-        Spacer(Modifier.height(12.dp))
+        uiState.usageRemaining?.let { remaining ->
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "$remaining message${if (remaining == 1) "" else "s"} remaining today",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF6B7280)
+            )
+        }
 
         Button(
             onClick = onSubmitClicked,
-            enabled = !uiState.isLoading && uiState.promptInput.isNotBlank(),
+            enabled = !uiState.isLoading &&
+                uiState.promptInput.isNotBlank() &&
+                (uiState.usageRemaining == null || uiState.usageRemaining > 0),
             modifier = Modifier.align(Alignment.End)
         ) {
             Text("Submit")
@@ -373,11 +414,89 @@ private fun ReportErrorCard(message: String, onRetry: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PreviousPromptsSheet(
+    isLoading: Boolean,
+    prompts: ImmutableList<QueryLogUi>,
+    errorMessage: String?,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit,
+    onPromptSelected: (QueryLogUi) -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                text = "Previous prompts",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(12.dp))
+
+            when {
+                isLoading -> Box(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+
+                errorMessage != null -> ReportErrorCard(message = errorMessage, onRetry = onRetry)
+
+                prompts.isEmpty() -> Text(
+                    text = "No previous prompts yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = 24.dp)
+                )
+
+                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(prompts, key = { it.queryLogId }) { item ->
+                        PreviousPromptItem(item = item, onClick = { onPromptSelected(item) })
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun PreviousPromptItem(item: QueryLogUi, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(width = 1.dp, color = Color(0xFFCBBFFF), shape = RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.userPrompt,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = item.executedAt,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF6B7280)
+            )
+        }
+        Icon(
+            painter = painterResource(Res.drawable.ic_icon_keyboard_next),
+            contentDescription = null,
+            tint = Color(0xFF9CA3AF),
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
 private fun LazyListScope.reportResultItems(
     result: ReportResultUi,
     horizontalScrollState: ScrollState
 ) {
-    if (result.rows.isEmpty()) {
+if (result.rows.isEmpty()) {
         item {
             Text(
                 text = "No results found for this query.",

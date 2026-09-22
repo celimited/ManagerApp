@@ -13,11 +13,23 @@ data class AISalesReportUiState(
     val viewFormat: ResultViewFormat = ResultViewFormat.Table,
     val selectedLabelColumnIndex: Int = 0,
     val selectedMetricIndex: Int = 0,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isHistorySheetVisible: Boolean = false,
+    val isHistoryLoading: Boolean = false,
+    val previousPrompts: ImmutableList<QueryLogUi> = persistentListOf(),
+    val historyErrorMessage: String? = null,
+    val usageRemaining: Int? = null
 )
 
 @Immutable
 data class ReportResultUi(
     val columns: ImmutableList<String> = persistentListOf(),
     val rows: ImmutableList<ImmutableList<String>> = persistentListOf()
+)
+
+@Immutable
+data class QueryLogUi(
+    val queryLogId: Int,
+    val userPrompt: String,
+    val executedAt: String
 )

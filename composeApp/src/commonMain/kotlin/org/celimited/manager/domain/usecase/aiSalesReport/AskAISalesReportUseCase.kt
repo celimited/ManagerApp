@@ -16,7 +16,7 @@ class AskAISalesReportUseCase(
     private val userSession: UserSession,
     private val dispatcherProvider: DispatcherProvider
 ) {
-    operator fun invoke(prompt: String): Flow<DataResult<SalesReportResult>> = flow {
+    operator fun invoke(prompt: String, queryLogId: Int = 0): Flow<DataResult<SalesReportResult>> = flow {
         emit(DataResult.Loading)
         val user = userSession.getUser()
         if (user == null || user.userId.isBlank()) {
@@ -27,7 +27,8 @@ class AskAISalesReportUseCase(
             repository.askAI(
                 userId = user.userId,
                 role = user.role,
-                prompt = prompt
+                prompt = prompt,
+                queryLogId = queryLogId
             )
         )
     }.flowOn(dispatcherProvider.io)

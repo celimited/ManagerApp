@@ -1,6 +1,7 @@
 package org.celimited.manager.component
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -10,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -23,7 +25,10 @@ fun CornerRoundTextField(
     fontSize: TextUnit = 16.sp,
     fontFamily: FontFamily = FontFamily.SansSerif,
     focusedBorderColor: Color = MaterialTheme.colorScheme.primary,
-    unfocusedBorderColor: Color = MaterialTheme.colorScheme.outline
+    unfocusedBorderColor: Color = MaterialTheme.colorScheme.outline,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    trailingIcon: @Composable (() -> Unit)? = null
 ) {
     OutlinedTextField(
         value = value,
@@ -40,6 +45,9 @@ fun CornerRoundTextField(
         ),
         shape = RoundedCornerShape(8.dp),
         singleLine = true,
-        maxLines = 1
+        maxLines = 1,
+        visualTransformation = visualTransformation,
+        keyboardOptions = keyboardOptions,
+        trailingIcon = trailingIcon
     )
 }

@@ -5,6 +5,8 @@ import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.okhttp.OkHttp
 import org.celimited.manager.core.common.device.AndroidDeviceInfoProvider
 import org.celimited.manager.core.common.device.DeviceInfoProvider
+import org.celimited.manager.core.common.preferences.AndroidLoginPreferences
+import org.celimited.manager.core.common.preferences.LoginPreferences
 import org.koin.core.module.Module
 import org.koin.dsl.module
 import java.util.concurrent.TimeUnit
@@ -22,4 +24,5 @@ fun androidPlatformModule(context: Context): Module = module {
         }
     }
     single<DeviceInfoProvider> { AndroidDeviceInfoProvider(context.applicationContext) }
+    single<LoginPreferences> { AndroidLoginPreferences(context.applicationContext) }
 }
