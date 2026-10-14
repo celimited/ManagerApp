@@ -31,4 +31,14 @@ sealed interface Screen: NavKey {
     data object AISalesReport: NavKey, Screen
     @Serializable
     data object TeamAttendance: NavKey, Screen
+    @Serializable
+    data object TodayStats: NavKey, Screen
+    @Serializable
+    data class SrDetail(val srId: Int): NavKey, Screen
+    @Serializable
+    data object DistributorList: NavKey, Screen
+    @Serializable
+    data class DistributorDetail(val distributorId: Int): NavKey, Screen
+    @Serializable
+    data class AddIssue(val distributorId: Int): NavKey, Screen
 }

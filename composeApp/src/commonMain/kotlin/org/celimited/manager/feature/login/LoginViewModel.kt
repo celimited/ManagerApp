@@ -9,16 +9,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.celimited.manager.component.ErrorDialogUi
 import org.celimited.manager.core.common.AppError
 import org.celimited.manager.core.common.DataResult
 import org.celimited.manager.core.common.device.DeviceInfoProvider
+import org.celimited.manager.domain.usecase.attendance.LoadAttendanceDataUseCase
 import org.celimited.manager.domain.usecase.login.GetSavedLoginIdUseCase
 import org.celimited.manager.domain.usecase.login.LoginUseCase
 
 class LoginViewModel(
     private val loginUseCase: LoginUseCase,
     private val deviceInfoProvider: DeviceInfoProvider,
-    private val getSavedLoginIdUseCase: GetSavedLoginIdUseCase
+    private val getSavedLoginIdUseCase: GetSavedLoginIdUseCase,
+    private val loadAttendanceDataUseCase: LoadAttendanceDataUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -55,17 +58,27 @@ class LoginViewModel(
                 when (result) {
                     is DataResult.Loading -> _uiState.update { it.copy(isLoading = true) }
                     is DataResult.Success -> {
+                        // Keep the spinner up while the Home attendance popup data loads. A failure
+                        // here never blocks login; Home retries the missing pieces on demand.
+                        loadAttendanceDataUseCase(forceRefresh = true)
                         _uiState.update { it.copy(isLoading = false) }
-                        println("Login success")
                         sendEffect(LoginUiEffect.NavigateToHome)
                     }
                     is DataResult.Error -> {
-                        _uiState.update { it.copy(isLoading = false) }
-                        sendEffect(LoginUiEffect.ShowError(result.error.toUserMessage()))
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                errorDialog = ErrorDialogUi(result.error.toUserMessage(), canRetry = false)
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+
+    fun onDismissError() {
+        _uiState.update { it.copy(errorDialog = null) }
     }
 
     private fun sendEffect(effect: LoginUiEffect) {

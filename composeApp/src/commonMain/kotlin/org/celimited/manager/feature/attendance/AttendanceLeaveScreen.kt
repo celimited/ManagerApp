@@ -28,8 +28,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.draw.alpha
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.collections.immutable.ImmutableMap
+import org.celimited.manager.model.attendance.DayAttendanceStatus
+import org.koin.compose.viewmodel.koinViewModel
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -52,20 +58,38 @@ import androidx.compose.ui.unit.sp
 import manager.composeapp.generated.resources.Res
 import manager.composeapp.generated.resources.ic_icon_pending
 import org.celimited.manager.component.ApplyLeaveFab
+import org.celimited.manager.component.ErrorDialog
+import org.celimited.manager.component.MessageDialog
 import org.celimited.manager.component.TopBar
+import org.celimited.manager.core.common.location.rememberLocationPermissionRequester
 import org.jetbrains.compose.resources.painterResource
 import kotlinx.datetime.*
 import manager.composeapp.generated.resources.ic_icon_back
 import manager.composeapp.generated.resources.ic_icon_keyboard_next
 import manager.composeapp.generated.resources.ic_icon_next
-import org.celimited.manager.utils.currentMonthNumber
-import org.celimited.manager.utils.currentYearNumber
 
 @Composable
 fun AttendanceLeaveRoute(
     onBackClick: () -> Unit,
-    teamAttendanceClick: () -> Unit
+    teamAttendanceClick: () -> Unit,
+    viewModel: AttendanceLeaveViewModel = koinViewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val requestLocationPermission = rememberLocationPermissionRequester(
+        onResult = viewModel::onLocationPermissionResult
+    )
+
+    LaunchedEffect(Unit) {
+        viewModel.onScreenOpened()
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.uiEffect.collect { effect ->
+            when (effect) {
+                AttendanceLeaveUiEffect.RequestLocationPermission -> requestLocationPermission()
+            }
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -78,14 +102,47 @@ fun AttendanceLeaveRoute(
         },
         floatingActionButton = {
             ApplyLeaveFab(
-                onClick = {}
+                onClick = viewModel::onApplyLeaveClick
             )
         }
     ) { padding ->
         AttendanceLeaveScreen(
             modifier = Modifier
                 .padding(padding),
-            teamAttendanceClick
+            teamAttendanceClick = teamAttendanceClick,
+            uiState = uiState,
+            onPreviousMonth = viewModel::onPreviousMonth,
+            onNextMonth = viewModel::onNextMonth
+        )
+    }
+
+    uiState.applyLeave?.let { form ->
+        ApplyLeaveSheet(
+            form = form,
+            onFromDateSelected = viewModel::onFromDateSelected,
+            onToDateSelected = viewModel::onToDateSelected,
+            onReasonSelected = viewModel::onLeaveReasonSelected,
+            onRemarksChanged = viewModel::onLeaveRemarksChanged,
+            onSubmit = viewModel::onSubmitLeave,
+            onDismiss = viewModel::onApplyLeaveDismissed
+        )
+    }
+
+    uiState.leaveResult?.let { result ->
+        MessageDialog(
+            title = if (result.isSuccess) "Leave Applied" else "Couldn't Apply Leave",
+            titleColor = if (result.isSuccess) Color(0xFF2BB24C) else Color(0xFFF0292F),
+            message = result.message,
+            onClose = viewModel::onLeaveResultClosed
+        )
+    }
+
+    // Last, so it stacks above the Apply Leave sheet when a reasons/location call fails there.
+    uiState.errorDialog?.let { error ->
+        ErrorDialog(
+            message = error.message,
+            onClose = viewModel::onDismissError,
+            onRetry = if (error.canRetry) viewModel::onRetry else null
         )
     }
 }
@@ -93,7 +150,10 @@ fun AttendanceLeaveRoute(
 @Composable
 fun AttendanceLeaveScreen(
     modifier: Modifier = Modifier,
-    teamAttendanceClick: () -> Unit
+    teamAttendanceClick: () -> Unit,
+    uiState: AttendanceLeaveUiState,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit
 ) {
 
     val scrollState = rememberScrollState()
@@ -102,8 +162,16 @@ fun AttendanceLeaveScreen(
             .verticalScroll(scrollState)
     ) {
         PendingLeaveRequestSection()
-        MonthlyAttendanceSummary()
-        MonthlyCalenderSection()
+        MonthlyAttendanceSummary(summary = uiState.summary)
+        MonthlyCalenderSection(
+            year = uiState.year,
+            month = uiState.month,
+            days = uiState.days,
+            canGoNext = uiState.canGoNext,
+            isLoading = uiState.isLoading,
+            onPrevious = onPreviousMonth,
+            onNext = onNextMonth
+        )
         
         Box (
             modifier = Modifier
@@ -196,7 +264,7 @@ fun PendingLeaveRequestSection() {
 }
 
 @Composable
-fun MonthlyAttendanceSummary () {
+fun MonthlyAttendanceSummary (summary: MonthlySummaryUi) {
     Column(
         modifier = Modifier
             .padding(horizontal = 10.dp, vertical = 20.dp)
@@ -236,11 +304,11 @@ fun MonthlyAttendanceSummary () {
                         style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                     )
 
-                    // Progress arc (75%)
+                    // Progress arc
                     drawArc(
                         color = Color(0xFF582FFF),
                         startAngle = -90f,
-                        sweepAngle = 360f * 0.75f,
+                        sweepAngle = 360f * summary.percentage / 100f,
                         useCenter = false,
                         topLeft = Offset(centerX - radius, centerY - radius),
                         size = Size(radius * 2, radius * 2),
@@ -250,7 +318,7 @@ fun MonthlyAttendanceSummary () {
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "75%",
+                        text = "${summary.percentage}%",
                         fontSize = 30.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF582FFF)
@@ -268,12 +336,12 @@ fun MonthlyAttendanceSummary () {
             // 4 Section Grid
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AttendanceCard(number = "12", label = "Present", bgColor = Color(0xFFCDFFD0))
-                    AttendanceCard(number = "2", label = "Late", bgColor = Color(0xFFFFC3C4))
+                    AttendanceCard(number = summary.present.toString(), label = "Present", bgColor = Color(0xFFCDFFD0))
+                    AttendanceCard(number = summary.late.toString(), label = "Late", bgColor = Color(0xFFFFC3C4))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AttendanceCard(number = "1", label = "Leave", bgColor = Color(0xFFFFE8D4))
-                    AttendanceCard(number = "1", label = "Absent", bgColor = Color(0xFFF2F2F7))
+                    AttendanceCard(number = summary.leave.toString(), label = "Leave", bgColor = Color(0xFFFFE8D4))
+                    AttendanceCard(number = summary.absent.toString(), label = "Absent", bgColor = Color(0xFFF2F2F7))
                 }
             }
         }
@@ -306,55 +374,40 @@ fun AttendanceCard(number: String, label: String, bgColor: Color) {
     }
 }
 
-enum class AttendanceStatus { PRESENT, LATE, LEAVE, NONE }
+// Darker than the Absent summary card (F2F2F7) so it stays visible as a day cell and legend dot.
+private val AbsentDayColor = Color(0xFFE5E5EA)
+
+// Week starts on Saturday; Friday (last column) is the only weekly holiday.
+private val dayNames = listOf("Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri")
+private const val HOLIDAY_INDEX = 6
+private val monthNames = listOf(
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+)
 
 @Composable
 fun MonthlyCalenderSection(
-    initialMonth: Int = currentMonthNumber(),
-    initialYear: Int = currentYearNumber()
+    year: Int,
+    month: Int,
+    days: ImmutableMap<Int, DayAttendanceStatus>,
+    canGoNext: Boolean,
+    isLoading: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit
 ) {
-    val attendanceData = mapOf(
-        3 to AttendanceStatus.PRESENT,
-        4 to AttendanceStatus.PRESENT,
-        5 to AttendanceStatus.PRESENT,
-        8 to AttendanceStatus.LATE,
-        9 to AttendanceStatus.PRESENT,
-        10 to AttendanceStatus.PRESENT,
-        11 to AttendanceStatus.LATE,
-        12 to AttendanceStatus.PRESENT,
-        15 to AttendanceStatus.LEAVE,
-        16 to AttendanceStatus.LEAVE,
-        17 to AttendanceStatus.PRESENT,
-        18 to AttendanceStatus.PRESENT,
-    )
+    val calendarDays = remember(year, month) {
+        val firstDate = LocalDate(year, month, 1)
+        // ISO: Mon=1 … Sat=6, Sun=7 → shift so Saturday is column 0.
+        val firstDayOffset = (firstDate.dayOfWeek.isoDayNumber + 1) % 7
+        val totalDays = firstDate.plus(1, DateTimeUnit.MONTH).minus(1, DateTimeUnit.DAY).day
+        val prevMonthLastDay = firstDate.minus(1, DateTimeUnit.DAY).day
 
-    var currentMonth by remember { mutableIntStateOf(initialMonth) }
-    var currentYear by remember { mutableIntStateOf(initialYear) }
-
-    val dayNames = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-    val monthNames = listOf(
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
-    )
-
-    fun navigatePrev() {
-        if (currentMonth == 1) { currentMonth = 12; currentYear-- } else currentMonth--
-    }
-
-    fun navigateNext() {
-        if (currentMonth == 12) { currentMonth = 1; currentYear++ } else currentMonth++
-    }
-
-    val firstDate = LocalDate(currentYear, currentMonth, 1)
-    val firstDayOffset = (firstDate.dayOfWeek.isoDayNumber % 7)
-    val totalDays = firstDate.plus(1, DateTimeUnit.MONTH).minus(1, DateTimeUnit.DAY).dayOfMonth
-    val prevMonthLastDay = firstDate.minus(1, DateTimeUnit.DAY).dayOfMonth
-
-    val calendarDays = buildList {
-        for (i in firstDayOffset - 1 downTo 0) add(Triple(prevMonthLastDay - i, false, false))
-        for (day in 1..totalDays) add(Triple(day, true, false))
-        val remaining = 42 - size
-        for (i in 1..remaining) add(Triple(i, false, true))
+        buildList {
+            for (i in firstDayOffset - 1 downTo 0) add(Triple(prevMonthLastDay - i, false, false))
+            for (day in 1..totalDays) add(Triple(day, true, false))
+            val remaining = 42 - size
+            for (i in 1..remaining) add(Triple(i, false, true))
+        }
     }
 
     BoxWithConstraints(
@@ -397,7 +450,7 @@ fun MonthlyCalenderSection(
                             .size(30.dp)
                             .clip(CircleShape)
                             .background(Color.White)
-                            .clickable { navigatePrev() }
+                            .clickable { onPrevious() }
                             .align(Alignment.CenterStart),
                         contentAlignment = Alignment.Center
                     ) {
@@ -409,20 +462,33 @@ fun MonthlyCalenderSection(
                         )
                     }
 
-                    Text(
-                        text = "${monthNames[currentMonth - 1]} $currentYear",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    Row(
+                        modifier = Modifier.align(Alignment.Center),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${monthNames[month - 1]} $year",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        if (isLoading) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    }
 
                     Box(
                         modifier = Modifier
                             .size(30.dp)
+                            .alpha(if (canGoNext) 1f else 0.4f)
                             .clip(CircleShape)
                             .background(Color.White)
-                            .clickable { navigateNext() }
+                            .clickable(enabled = canGoNext) { onNext() }
                             .align(Alignment.CenterEnd),
                         contentAlignment = Alignment.Center
                     ) {
@@ -444,13 +510,12 @@ fun MonthlyCalenderSection(
                         .padding(horizontal = horizontalPadding),
                     horizontalArrangement = Arrangement.spacedBy(cellGap)
                 ) {
-                    dayNames.forEach { day ->
-                        val isFriSat = day == "Fri" || day == "Sat"
+                    dayNames.forEachIndexed { index, day ->
                         Text(
                             text = day,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (isFriSat) Color(0xFF582FFF) else Color(0xFF1E2939),
+                            color = if (index == HOLIDAY_INDEX) Color(0xFF582FFF) else Color(0xFF1E2939),
                             modifier = Modifier.width(cellWidth),
                             textAlign = TextAlign.Center
                         )
@@ -468,14 +533,15 @@ fun MonthlyCalenderSection(
                     weeks.forEach { week ->
                         Row(horizontalArrangement = Arrangement.spacedBy(cellGap)) {
                             week.forEachIndexed { index, (day, isCurrentMonth, _) ->
-                                val isWeekend = index == 5 || index == 6
-                                val status = if (isCurrentMonth) attendanceData[day] else null
+                                val isWeekend = index == HOLIDAY_INDEX
+                                val status = if (isCurrentMonth) days[day] else null
 
                                 val (bgColor, textColor) = when {
                                     !isCurrentMonth -> Pair(Color.Transparent, Color(0x6699A1AF))
-                                    status == AttendanceStatus.PRESENT -> Pair(Color(0xFFCDFFD0), Color(0xFF364153))
-                                    status == AttendanceStatus.LATE -> Pair(Color(0xFFFFC8CA), Color(0xFF364153))
-                                    status == AttendanceStatus.LEAVE -> Pair(Color(0xFFFF902F), Color(0xFFFFFFFF))
+                                    status == DayAttendanceStatus.PRESENT -> Pair(Color(0xFFCDFFD0), Color(0xFF364153))
+                                    status == DayAttendanceStatus.LATE -> Pair(Color(0xFFFFC8CA), Color(0xFF364153))
+                                    status == DayAttendanceStatus.LEAVE -> Pair(Color(0xFFFF902F), Color(0xFFFFFFFF))
+                                    status == DayAttendanceStatus.ABSENT -> Pair(AbsentDayColor, Color(0xFF364153))
                                     isWeekend -> Pair(Color(0xFFEEEAFF), Color(0xFF1E2939))
                                     else -> Pair(Color.Transparent, Color(0xFF1E2939))
                                 }
@@ -511,6 +577,7 @@ fun MonthlyCalenderSection(
                     LegendItem(color = Color(0xFF4CAF50), label = "Present")
                     LegendItem(color = Color(0xFFFFC3C4), label = "Late")
                     LegendItem(color = Color(0xFFFF902F), label = "Leave")
+                    LegendItem(color = AbsentDayColor, label = "Absent")
                 }
             }
         }

@@ -14,5 +14,5 @@ val loginModule = module {
     single<AuthRepository> { AuthRepositoryImpl(get(), get(), get()) }
     factory { LoginUseCase(get(), get(), get()) }
     factory { GetSavedLoginIdUseCase(get(), get()) }
-    viewModel { LoginViewModel(get(), get(), get()) }
+    viewModel { LoginViewModel(get(), get(), get(), get()) }
 }

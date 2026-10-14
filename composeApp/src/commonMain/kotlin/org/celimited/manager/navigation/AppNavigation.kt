@@ -23,6 +23,11 @@ import org.celimited.manager.feature.otp.OTPRoute
 import org.celimited.manager.feature.resetPassword.ResetPasswordRoute
 import org.celimited.manager.feature.retailVisit.RetailVisitRoute
 import org.celimited.manager.feature.teamAttendance.TeamAttendanceRoute
+import org.celimited.manager.feature.addIssue.AddIssueRoute
+import org.celimited.manager.feature.distributorDetail.DistributorDetailRoute
+import org.celimited.manager.feature.distributorList.DistributorListRoute
+import org.celimited.manager.feature.todayStats.SrDetailRoute
+import org.celimited.manager.feature.todayStats.TodayStatsRoute
 
 @Composable
 fun AppNavigation(){
@@ -37,6 +42,11 @@ fun AppNavigation(){
                     subclass(Screen.Otp::class, Screen.Otp.serializer())
                     subclass(Screen.Attendance::class, Screen.Attendance.serializer())
                     subclass(Screen.AISalesReport::class, Screen.AISalesReport.serializer())
+                    subclass(Screen.TodayStats::class, Screen.TodayStats.serializer())
+                    subclass(Screen.SrDetail::class, Screen.SrDetail.serializer())
+                    subclass(Screen.DistributorList::class, Screen.DistributorList.serializer())
+                    subclass(Screen.DistributorDetail::class, Screen.DistributorDetail.serializer())
+                    subclass(Screen.AddIssue::class, Screen.AddIssue.serializer())
                 }
             }
         },
@@ -85,6 +95,56 @@ fun AppNavigation(){
                             },
                             onAISalesReportClick = {
                                 backStack.add(Screen.AISalesReport)
+                            },
+                            onTodayStatsClick = {
+                                backStack.add(Screen.TodayStats)
+                            },
+                            onStockStatusClick = {
+                                backStack.add(Screen.DistributorList)
+                            }
+                        )
+                    }
+
+                    is Screen.DistributorList -> {
+                        DistributorListRoute(
+                            onBackClick = {
+                                backStack.removeLast()
+                            },
+                            onSessionExpired = {
+                                backStack.clear()
+                                backStack.add(Screen.Login)
+                            },
+                            onDistributorClick = { distributorId ->
+                                backStack.add(Screen.DistributorDetail(distributorId))
+                            }
+                        )
+                    }
+
+                    is Screen.DistributorDetail -> {
+                        DistributorDetailRoute(
+                            distributorId = key.distributorId,
+                            onBackClick = {
+                                backStack.removeLast()
+                            },
+                            onAddIssueClick = {
+                                backStack.add(Screen.AddIssue(key.distributorId))
+                            },
+                            onSessionExpired = {
+                                backStack.clear()
+                                backStack.add(Screen.Login)
+                            }
+                        )
+                    }
+
+                    is Screen.AddIssue -> {
+                        AddIssueRoute(
+                            distributorId = key.distributorId,
+                            onBackClick = {
+                                backStack.removeLast()
+                            },
+                            onSessionExpired = {
+                                backStack.clear()
+                                backStack.add(Screen.Login)
                             }
                         )
                     }
@@ -124,6 +184,38 @@ fun AppNavigation(){
                         TeamAttendanceRoute(
                             onBackClick = {
                                 backStack.removeLast()
+                            },
+                            onSessionExpired = {
+                                backStack.clear()
+                                backStack.add(Screen.Login)
+                            }
+                        )
+                    }
+
+                    is Screen.TodayStats -> {
+                        TodayStatsRoute(
+                            onBackClick = {
+                                backStack.removeLast()
+                            },
+                            onSrClick = { srId ->
+                                backStack.add(Screen.SrDetail(srId))
+                            },
+                            onSessionExpired = {
+                                backStack.clear()
+                                backStack.add(Screen.Login)
+                            }
+                        )
+                    }
+
+                    is Screen.SrDetail -> {
+                        SrDetailRoute(
+                            srId = key.srId,
+                            onBackClick = {
+                                backStack.removeLast()
+                            },
+                            onSessionExpired = {
+                                backStack.clear()
+                                backStack.add(Screen.Login)
                             }
                         )
                     }

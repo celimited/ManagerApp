@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -21,7 +22,8 @@ fun PrimaryButton(
     enabled: Boolean = true,
     cornerRadius: Dp = 10.dp,
     containerColor: Color = Color(0xFF582FFF),
-    contentColor: Color = Color.White
+    contentColor: Color = Color.White,
+    fontSize: TextUnit = 20.sp
 ) {
     Button(
         onClick = onClick,
@@ -37,7 +39,7 @@ fun PrimaryButton(
             text = text,
             modifier = Modifier.padding(10.dp),
             style = MaterialTheme.typography.labelLarge,
-            fontSize = 20.sp,
+            fontSize = fontSize,
         )
     }
 }

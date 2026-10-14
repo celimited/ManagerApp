@@ -126,12 +126,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/HierarchyLevelsResponse'
 
+  /user/team-members:
+    get:
+      summary: Get Team Members (Add Issue → Assign To)
+      description: >
+        The logged-in user's team members who cover the given distributor — the people an issue
+        for that distributor can be assigned to. Sorted by name.
+      operationId: getTeamMembers
+      tags:
+        - Hierarchy
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - name: distributorId
+          in: query
+          required: true
+          description: Distributor id (the `id` from /user/distributors)
+          schema:
+            type: integer
+          example: 101
+      responses:
+        '200':
+          description: Team members retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMemberListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/DistributorNotFoundError'
+
   /attendance/monthly-summary:
     get:
       summary: Get Monthly Attendance Summary and Calendar Data
       operationId: getMonthlyAttendanceSummary
       tags:
         - Attendance
+      security:
+        - BearerAuth: [ ]
       parameters:
         - name: userId
           in: query
@@ -165,51 +200,6 @@ paths:
                 $ref: '#/components/schemas/MonthlyAttendanceResponse'
         '400':
           $ref: '#/components/responses/BadRequestError'
-
-    /attendance/team-summary:
-      get:
-        summary: Get Team Attendance Summary & Manager List By Level
-        operationId: getTeamAttendanceSummary
-        tags:
-          - Attendance
-        security:
-          - BearerAuth: [ ]
-        parameters:
-          - name: levelKey
-            in: query
-            required: true
-            description: Target level key selected from hierarchy tabs (e.g., DIVISION, REGION, AREA, TERRITORY)
-            schema:
-              type: string
-            example: "DIVISION"
-          - name: searchQuery
-            in: query
-            required: false
-            description: Filter by name, location, or designation
-            schema:
-              type: string
-            example: "Sarah"
-          - name: page
-            in: query
-            required: false
-            schema:
-              type: integer
-              default: 1
-            example: 1
-          - name: limit
-            in: query
-            required: false
-            schema:
-              type: integer
-              default: 10
-            example: 20
-        responses:
-          '200':
-            description: Team attendance report retrieved successfully
-            content:
-              application/json:
-                schema:
-                  $ref: '#/components/schemas/TeamAttendanceSummaryResponse'
 
   /attendance/team-summary:
     get:
@@ -283,10 +273,12 @@ paths:
       summary: Get Today's Attendance Status for the Home Popup
       description: >
         Returns the user's attendance state for today together with the on-time deadline and the
-        server clock. The app compares `attendanceDeadline` against the device time corrected by the
-        `serverTime` offset to decide whether to show the on-time or late check-in popup; the server
-        still validates late/on-time when `/attendance/save-attendance` is called.
-        Called every time the Home screen is entered (after login and on app reopen).
+        server clock. The app rejects check-in when the device clock differs from `serverTime` by
+        more than 2 minutes; otherwise it compares the device time with `attendanceDeadline` to
+        decide whether to show the on-time or late check-in popup. The server still validates
+        late/on-time when `/attendance/save-attendance` is called.
+        Called once right after login (together with late-reasons, geofence-config and
+        distributors) and cached for the session.
       operationId: getTodayAttendanceStatus
       tags:
         - Attendance
@@ -376,13 +368,14 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequestError'
 
-  /geofence-config:
+  /user/geofence-config:
     get:
       summary: Get Geofence Configuration
       description: >
-        Enforcement rule and default allowed distance to apply when the device is outside an
-        attendance location's radius. The app fetches it once per session and caches it; distance
-        is calculated on the device.
+        Per-salespoint enforcement rule and allowed radius. When the selected distributor's id
+        matches a `salespointId`, its coordinates are valid and `defaultRadiusMeters` > 0, the app
+        measures the device's distance to the distributor and applies `checkInOption` if it is
+        outside the radius. Fetched once per session and cached.
       operationId: getGeofenceConfig
       tags:
         - Geofence
@@ -428,22 +421,99 @@ paths:
               schema:
                 $ref: '#/components/schemas/AskOpenAiResponse'
 
-  /distributors:
-    get:
-      summary: Get Distributors for a User
-      operationId: getDistributors
+  /AIReportGenerator/AskOpenAIForSummary:
+    post:
+      summary: Summarise a report the AI already produced
+      operationId: askOpenAIForSummary
+      description: >
+        Sends a result from /AIReportGenerator/AskOpenAI back to the model for
+        interpretation. `QueryLogID` is the id that AskOpenAI returned for the query,
+        and `Data` is that query's rows keyed by column name.
       tags:
-        - Distributor
+        - AI Sales Report
+      security:
+        - BearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskOpenAiSummaryRequest'
+      responses:
+        '200':
+          description: Summary generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AskOpenAiSummaryResponse'
+
+  /AIReportGenerator/GetAIFAQs:
+    get:
+      summary: Get suggested FAQ prompts for a user
+      operationId: getAIFAQs
+      description: >
+        Curated starter questions shown on the AI Sales Report screen while no query
+        result is displayed. Each item carries a `queryLogID` that is passed back to
+        /AIReportGenerator/AskOpenAI when the user taps it.
+      tags:
+        - AI Sales Report
       security:
         - BearerAuth: [ ]
       parameters:
-        - name: userId
+        - name: UserID
           in: query
           required: true
           description: Unique identifier of the user
           schema:
             type: string
-          example: "usr_7f3a92bc"
+          example: "1768"
+      responses:
+        '200':
+          description: FAQ list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryLogListResponse'
+
+  /AIReportGenerator/GetCurrentUserAllQueryLog:
+    get:
+      summary: Get a user's previously executed prompts
+      operationId: getCurrentUserAllQueryLog
+      description: >
+        History of prompts this user has already run, shown in the "Previous prompts"
+        sheet. Selecting one re-runs it through /AIReportGenerator/AskOpenAI with its
+        `queryLogID`.
+      tags:
+        - AI Sales Report
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - name: UserID
+          in: query
+          required: true
+          description: Unique identifier of the user
+          schema:
+            type: string
+          example: "1768"
+      responses:
+        '200':
+          description: Query log retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryLogListResponse'
+
+  /user/distributors:
+    get:
+      summary: Get Distributors for the Logged-in User
+      description: >
+        Shown as the Location dropdown in the check-in popup. latitude/longitude may be empty
+        strings, in which case no geofence check is done for that distributor.
+      operationId: getDistributors
+      tags:
+        - Distributor
+      security:
+        - BearerAuth: [ ]
       responses:
         '200':
           description: Distributor list retrieved successfully
@@ -452,7 +522,439 @@ paths:
               schema:
                 $ref: '#/components/schemas/DistributorListResponse'
 
+  # --- DISTRIBUTOR DETAILS (one endpoint per tab, loaded when the tab opens) ---
+  # Name, code and address are NOT repeated here; the app already has them from /user/distributors.
+  # Amounts are raw numbers in BDT, percents are plain numbers (78.5 = 78.5%), dates are yyyy-MM-dd.
+  # The app does all display formatting (e.g. 3909000 -> "৳39.09L").
+  /distributor/overview:
+    get:
+      summary: Get Distributor Overview (Overview tab + header)
+      description: >
+        Header extras (last visit, phone) plus everything on the Overview tab: growth analytics,
+        target achievement, invoice status and the stock status block.
+      operationId: getDistributorOverview
+      tags:
+        - Distributor
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - name: distributorId
+          in: query
+          required: true
+          description: Distributor id (the `id` from /user/distributors)
+          schema:
+            type: integer
+          example: 101
+      responses:
+        '200':
+          description: Distributor overview retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistributorOverviewResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '404':
+          $ref: '#/components/responses/DistributorNotFoundError'
+
+  /distibutor/stock-summary:
+    get:
+      summary: Get Distributor Stock Summary (Stock tab)
+      description: >
+        Pending indent approvals, indent suggestion, the six summary tiles and the stock health
+        distribution for one distributor.
+      operationId: getDistributorStockSummary
+      tags:
+        - Distributor
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - name: DistributorId
+          in: query
+          required: true
+          description: Distributor id (the `id` from /user/distributors)
+          schema:
+            type: integer
+          example: 101
+      responses:
+        '200':
+          description: Distributor stock summary retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistributorStockSummaryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '404':
+          $ref: '#/components/responses/DistributorNotFoundError'
+
+  /distributor/issues:
+    get:
+      summary: Get Distributor Issues (Issues tab)
+      description: >
+        Paged issue list for one distributor. Search and filters are applied on the server so the
+        app never has to load every issue.
+      operationId: getDistributorIssues
+      tags:
+        - Distributor
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - name: distributorId
+          in: query
+          required: true
+          description: Distributor id (the `id` from /user/distributors)
+          schema:
+            type: integer
+          example: 101
+        - name: status
+          in: query
+          required: false
+          description: Filter by status. Omit for all statuses.
+          schema:
+            $ref: '#/components/schemas/IssueStatus'
+        - name: priority
+          in: query
+          required: false
+          description: Filter by priority. Omit for all priorities.
+          schema:
+            $ref: '#/components/schemas/IssuePriority'
+        - name: search
+          in: query
+          required: false
+          description: Case-insensitive match on title and assignee
+          schema:
+            type: string
+          example: "invoice"
+        - name: page
+          in: query
+          required: false
+          description: 1-based page number
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Distributor issues retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DistributorIssueListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '404':
+          $ref: '#/components/responses/DistributorNotFoundError'
+
+  /distributor/save-issue:
+    post:
+      summary: Save Distributor Issue (Add Issue)
+      description: >
+        Creates a new issue for a distributor. New issues start with status PENDING. Like
+        save-attendance and apply-leave, the request carries the device location and device info.
+      operationId: saveDistributorIssue
+      tags:
+        - Distributor
+      security:
+        - BearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveIssueRequest'
+      responses:
+        '200':
+          description: Issue saved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaveIssueResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/DistributorNotFoundError'
+
+  # --- TODAY'S STATS ---
+  # Scope comes from the bearer token: the backend resolves the logged-in user's subtree, so none of
+  # web's ParentID / userid / MHNodes are sent. Mapping to web (v1/newDashboard/*):
+  #   levelKey -> MHLevel, unitId -> a single MHNodes value, date -> DashboardDate.
+  # Without levelKey a section endpoint returns only `total` (My Summary tab); with levelKey it also
+  # returns `units`, one row per unit at that level (My Team tab).
+  # Money is raw taka, percentages are 0-100, times are ISO-8601 local date-times — the app formats them.
+
+  /today-stats/attendance:
+    get:
+      summary: Today's Stats - Attendance
+      description: >
+        Replaces web `getOrderAttendance` (NewAttendance): TotalSr, PresentSr, AbsentSr, LeaveSr,
+        VisitSRCount, OrderStartSRCount, IdleSRCount, LastActiveSR.
+      operationId: getTodayStatsAttendance
+      tags:
+        - Today Stats
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TodayStatsLevelKey'
+        - $ref: '#/components/parameters/TodayStatsUnitId'
+        - $ref: '#/components/parameters/TodayStatsDate'
+      responses:
+        '200':
+          description: Attendance stats retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodayAttendanceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /today-stats/productivity:
+    get:
+      summary: Today's Stats - Call, SKU & Memo Productivity
+      description: >
+        Replaces web `getOrderCallProductivity` (NewCallProductivity, NewSkuProductivity, NewKeyMetrics).
+        Feeds the Call Productivity, SKU Productivity and Key Sales Metrics cards (My Summary) and the
+        Call & SKU Productivity card (My Team). `memo` is only filled on `total`.
+      operationId: getTodayStatsProductivity
+      tags:
+        - Today Stats
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TodayStatsLevelKey'
+        - $ref: '#/components/parameters/TodayStatsUnitId'
+        - $ref: '#/components/parameters/TodayStatsDate'
+      responses:
+        '200':
+          description: Productivity stats retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodayProductivityResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /today-stats/target:
+    get:
+      summary: Today's Stats - Target & Achievement
+      description: >
+        Replaces web `getOrderTargetAchievement` (NewTargetAchievement, NewTotalTargetAchievement).
+        `monthToDate` drives the header ring card ("Day 21 of 30") and the Running Track card;
+        `today` / `tillDate` drive the Today and Till date cards and the My Team Target table.
+        `monthToDate` is only filled on `total`.
+      operationId: getTodayStatsTarget
+      tags:
+        - Today Stats
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TodayStatsLevelKey'
+        - $ref: '#/components/parameters/TodayStatsUnitId'
+        - $ref: '#/components/parameters/TodayStatsDate'
+      responses:
+        '200':
+          description: Target stats retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodayTargetResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /today-stats/inventory:
+    get:
+      summary: Today's Stats - Inventory Status
+      description: Replaces web `getOrderInventory` (NewInventory).
+      operationId: getTodayStatsInventory
+      tags:
+        - Today Stats
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TodayStatsLevelKey'
+        - $ref: '#/components/parameters/TodayStatsUnitId'
+        - $ref: '#/components/parameters/TodayStatsDate'
+      responses:
+        '200':
+          description: Inventory stats retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodayInventoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /today-stats/zero-sales:
+    get:
+      summary: Today's Stats - Zero Sales Outlets & SKUs
+      description: >
+        Replaces web `getOrderZeroSales` (ZeroSalesInfo: ActiveOutlet, ZeroSalesOutlet, ActiveSku,
+        ZeroSalesSku). The My Team "Zero sales SKU" card joins these rows with /today-stats/inventory
+        rows by `unitId` for current stock.
+      operationId: getTodayStatsZeroSales
+      tags:
+        - Today Stats
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TodayStatsLevelKey'
+        - $ref: '#/components/parameters/TodayStatsUnitId'
+        - $ref: '#/components/parameters/TodayStatsDate'
+      responses:
+        '200':
+          description: Zero sales stats retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodayZeroSalesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /today-stats/order-breakdown:
+    get:
+      summary: Today's Stats - Order Breakdown (Project / Product / SKU)
+      description: >
+        Inspired by web `OrderDetails` (NewOrder). Feeds the Project / Product / SKU / SKU-wise list
+        on My Summary and "Product wise order status" on My Team (Type = groupBy, Division = unitId).
+      operationId: getTodayStatsOrderBreakdown
+      tags:
+        - Today Stats
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TodayStatsGroupBy'
+        - $ref: '#/components/parameters/TodayStatsLevelKey'
+        - $ref: '#/components/parameters/TodayStatsUnitId'
+        - $ref: '#/components/parameters/TodayStatsDate'
+        - $ref: '#/components/parameters/TodayStatsSearch'
+        - $ref: '#/components/parameters/TodayStatsPage'
+        - $ref: '#/components/parameters/TodayStatsPageSize'
+      responses:
+        '200':
+          description: Order breakdown retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderBreakdownResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /today-stats/srs:
+    get:
+      summary: Today's Stats - SR List
+      description: >
+        SR tab. Inspired by web NewDashboardOrderkpi (SRID, Name, StrikeRate, LPSC, ...). Without
+        levelKey / unitId it lists every SR under the logged-in user.
+      operationId: getTodayStatsSrList
+      tags:
+        - Today Stats
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TodayStatsLevelKey'
+        - $ref: '#/components/parameters/TodayStatsUnitId'
+        - $ref: '#/components/parameters/TodayStatsDate'
+        - $ref: '#/components/parameters/TodayStatsSearch'
+        - $ref: '#/components/parameters/TodayStatsPage'
+        - $ref: '#/components/parameters/TodayStatsPageSize'
+      responses:
+        '200':
+          description: SR list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SrStatListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /today-stats/sr-detail:
+    get:
+      summary: Today's Stats - SR Detail
+      description: Profile, work timeline, work counts and today's target for one SR.
+      operationId: getTodayStatsSrDetail
+      tags:
+        - Today Stats
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TodayStatsSrId'
+        - $ref: '#/components/parameters/TodayStatsDate'
+      responses:
+        '200':
+          description: SR detail retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SrDetailResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/SrNotFoundError'
+
+  /today-stats/sr-orders:
+    get:
+      summary: Today's Stats - SR Order Details
+      description: Order lines for one SR, grouped by Project / Product / SKU / SKU-wise.
+      operationId: getTodayStatsSrOrders
+      tags:
+        - Today Stats
+      security:
+        - BearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/TodayStatsSrId'
+        - $ref: '#/components/parameters/TodayStatsGroupBy'
+        - $ref: '#/components/parameters/TodayStatsDate'
+        - $ref: '#/components/parameters/TodayStatsSearch'
+        - $ref: '#/components/parameters/TodayStatsPage'
+        - $ref: '#/components/parameters/TodayStatsPageSize'
+      responses:
+        '200':
+          description: SR orders retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SrOrderListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/SrNotFoundError'
+
 components:
+  securitySchemes:
+    # In docs/index.html this is filled automatically from the /auth/login response.
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   responses:
     UnauthorizedError:
       description: Invalid credentials
@@ -466,6 +968,95 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    DistributorNotFoundError:
+      description: No distributor with this id is assigned to the logged-in user
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            statusCode: 404
+            message: "Distributor not found."
+    SrNotFoundError:
+      description: No SR with this id is under the logged-in user
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            statusCode: 404
+            message: "SR not found."
+
+  parameters:
+    TodayStatsLevelKey:
+      name: levelKey
+      in: query
+      required: false
+      description: >
+        Hierarchy level from /user/subordinate-hierarchy-levels (web MHLevel). Omit for the logged-in
+        user's own totals (My Summary); send it to also get one row per unit at that level (My Team).
+      schema:
+        type: string
+      example: "REGION"
+    TodayStatsUnitId:
+      name: unitId
+      in: query
+      required: false
+      description: Narrow to one unit (a `unitId` from a previous `units` row; web MHNodes).
+      schema:
+        type: integer
+      example: 12
+    TodayStatsDate:
+      name: date
+      in: query
+      required: false
+      description: Dashboard date (web DashboardDate). Defaults to today.
+      schema:
+        type: string
+        format: date
+      example: "2026-10-05"
+    TodayStatsGroupBy:
+      name: groupBy
+      in: query
+      required: true
+      schema:
+        type: string
+        enum: [ PROJECT, PRODUCT, SKU, SKU_WISE ]
+      example: "SKU_WISE"
+    TodayStatsSearch:
+      name: search
+      in: query
+      required: false
+      description: Case-insensitive name filter
+      schema:
+        type: string
+      example: "Starship"
+    TodayStatsPage:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 1
+      example: 1
+    TodayStatsPageSize:
+      name: pageSize
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 20
+      example: 20
+    TodayStatsSrId:
+      name: srId
+      in: query
+      required: true
+      description: SR id (the `srId` from /today-stats/srs)
+      schema:
+        type: integer
+      example: 5012
 
   schemas:
     # --- BASE RESPONSES ---
@@ -693,7 +1284,10 @@ components:
       properties:
         levelKey:
           type: string
-          description: Identifier string used as request parameter for filtering
+          description: >
+            Identifier string used as request parameter for filtering. Also drives the Today's Stats
+            My Team chips, which render whatever levels are returned — the design shows National and SR
+            chips too, so adding NATIONAL / SR here is an open backend decision.
           enum: [ DIVISION, REGION, AREA, TERRITORY ]
           example: "DIVISION"
         levelName:
@@ -846,22 +1440,25 @@ components:
           format: date-time
           description: Last moment for on-time attendance today, with UTC offset. Check-ins after this are late.
           example: "2026-09-20T09:30:00+06:00"
+        loginTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            When the user marked attendance today, with UTC offset. Null until attendance is
+            given (status ABSENT or LEAVE).
+          example: "2026-10-01T10:30:00+06:00"
         status:
           type: string
           description: >
-            NOT_MARKED = show the check-in popup (on-time or late depending on attendanceDeadline);
-            MARKED = no popup; ON_LEAVE = show approved-leave popup; LEAVE_PENDING = show pending-leave popup
-          enum: [ NOT_MARKED, MARKED, ON_LEAVE, LEAVE_PENDING ]
-          example: "NOT_MARKED"
-        checkInStatus:
-          type: string
-          nullable: true
-          description: Present when status is MARKED
-          enum: [ PRESENT, LATE ]
-          example: "PRESENT"
+            Matched case-insensitively. PRESENT = attendance already marked, no popup;
+            ABSENT = show the check-in popup (on-time or late depending on attendanceDeadline);
+            LEAVE = show the On Leave popup when leave.status is APPROVED, otherwise Leave Pending
+          enum: [ PRESENT, ABSENT, LEAVE ]
+          example: "ABSENT"
         leave:
           nullable: true
-          description: Present when status is ON_LEAVE or LEAVE_PENDING
+          description: Present when status is LEAVE
           allOf:
             - $ref: '#/components/schemas/LeaveInfo'
 
@@ -931,9 +1528,14 @@ components:
     GeofenceConfigData:
       type: object
       required:
+        - salespointId
         - checkInOption
         - defaultRadiusMeters
       properties:
+        salespointId:
+          type: integer
+          description: Distributor id this rule applies to
+          example: 7645
         checkInOption:
           type: integer
           description: >
@@ -955,7 +1557,9 @@ components:
             message:
               example: "Geofence configuration retrieved successfully."
             data:
-              $ref: '#/components/schemas/GeofenceConfigData'
+              type: array
+              items:
+                $ref: '#/components/schemas/GeofenceConfigData'
 
     # --- TEAM ATTENDANCE SCHEMAS ---
     TeamAttendanceStats:
@@ -1067,27 +1671,175 @@ components:
       type: object
       description: >
         Standalone response envelope (does not use BaseApiResponse — matches the
-        actual backend contract, which has no `success` field). `data` is a
+        actual backend contract, which has no `success` field). `aiResponses` is a
         dynamic tabular result: each item is a row represented as a free-form
         column-name/value map, with no fixed schema.
       properties:
         data:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-          example:
-            - Distributor: "ABC Distribution"
-              TotalSales: "125000"
-            - Distributor: "XYZ Traders"
-              TotalSales: "98000"
+          type: object
+          properties:
+            aiResponses:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+              example:
+                - outletName: "Hazrot Ali"
+                  totalSalesValue: 541766.55
+                - outletName: "Swapna Khatun"
+                  totalSalesValue: 339707.24
+            usageRemaining:
+              type: integer
+              example: 7
+            queryLogID:
+              type: integer
+              description: >
+                Id of the log row created for this query. Pass it back as `QueryLogID`
+                when calling /AIReportGenerator/AskOpenAIForSummary.
+              example: 20
         statusCode:
           type: integer
           example: 200
         message:
           type: string
           nullable: true
-          example: "Report generated successfully."
+          example: "Data Fetched Successfully"
+
+    AskOpenAiSummaryRequest:
+      type: object
+      required:
+        - UserID
+        - Role
+        - UserPrompt
+        - QueryLogID
+        - Data
+      properties:
+        UserID:
+          type: string
+          example: "1768"
+        Role:
+          type: string
+          example: "TSO"
+        UserPrompt:
+          type: string
+          description: The prompt whose result is being summarised.
+          example: "give me 10 top outlets by sales in 2025"
+        QueryLogID:
+          type: integer
+          description: The `queryLogID` returned by /AIReportGenerator/AskOpenAI for this query.
+          example: 34
+        Data:
+          type: array
+          description: >
+            The result rows, one object per row keyed by column name. Numeric cells are
+            sent as JSON numbers, everything else as strings.
+          items:
+            type: object
+            additionalProperties: true
+          example:
+            - outlet: "MOSARRAF HOSSAIN BABU"
+              sales Date: "26 Jan 2026"
+              total Sales: 484249.2
+            - outlet: "Md A Salam"
+              sales Date: "14 Feb 2026"
+              total Sales: 249743.0
+
+    AiSummary:
+      type: object
+      properties:
+        summary:
+          type: string
+          description: A short prose reading of the result.
+          example: "Top 10 outlets by sales are listed, but all records are dated Jan-Mar 2026, not 2025."
+        highlights:
+          type: array
+          description: Notable data points drawn from the rows.
+          items:
+            type: string
+          example:
+            - "#1 MOSARRAF HOSSAIN BABU: BDT 4,84,249.20 on 26 Jan 2026"
+            - "#2 Md A Salam: BDT 2,49,743.00; gap to #1 is BDT 2,34,506.20"
+        actions:
+          type: array
+          description: Suggested next steps for the user's role.
+          items:
+            type: string
+          example:
+            - "As a TSO, visit MOSARRAF HOSSAIN BABU and Md A Salam to reinforce assortment."
+        message:
+          type: string
+          nullable: true
+          example: ""
+
+    AskOpenAiSummaryResponse:
+      type: object
+      description: Standalone response envelope (no `success` field), as with the other AI endpoints.
+      properties:
+        data:
+          type: object
+          properties:
+            aiSummary:
+              $ref: '#/components/schemas/AiSummary'
+            usageRemaining:
+              type: integer
+              example: 7
+            summaryLogID:
+              type: integer
+              example: 3
+        statusCode:
+          type: integer
+          example: 200
+        message:
+          type: string
+          nullable: true
+          example: "Summary Data Fetched Successfully"
+
+    QueryLogItem:
+      type: object
+      properties:
+        queryLogID:
+          type: integer
+          example: 20
+        userPrompt:
+          type: string
+          example: "give me last years 10 top outlets by sales"
+        executedAt:
+          type: string
+          format: date-time
+          example: "2026-09-20T15:47:10.19"
+
+    QueryLogListResponse:
+      type: object
+      description: >
+        Standalone response envelope (no `success` field), shared by
+        /AIReportGenerator/GetAIFAQs and /AIReportGenerator/GetCurrentUserAllQueryLog —
+        the backend returns the identical shape for both.
+      properties:
+        data:
+          type: object
+          properties:
+            aiResponses:
+              type: array
+              items:
+                $ref: '#/components/schemas/QueryLogItem'
+            aiSummary:
+              type: string
+              nullable: true
+              example: null
+            usageRemaining:
+              type: integer
+              description: >
+                Remaining AI requests for the day. Always 0 on the FAQ endpoint, which
+                does not track quota — clients should read it from AskOpenAI or
+                GetCurrentUserAllQueryLog only.
+              example: 0
+        statusCode:
+          type: integer
+          example: 200
+        message:
+          type: string
+          nullable: true
+          example: "Data Fetched Successfully"
 
     # --- DISTRIBUTOR SCHEMAS ---
     Distributor:
@@ -1129,6 +1881,479 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Distributor'
+
+    # --- DISTRIBUTOR DETAIL SCHEMAS ---
+    SkuRef:
+      type: object
+      required:
+        - skuId
+        - skuName
+      properties:
+        skuId:
+          type: integer
+          example: 4521
+        skuCode:
+          type: string
+          nullable: true
+          example: "SKU-4521"
+        skuName:
+          type: string
+          example: "Classic Cola 500ml"
+
+    DistributorGrowth:
+      type: object
+      required:
+        - growthPercent
+        - mtdAchievementPercent
+        - ytdAchievementPercent
+      properties:
+        growthPercent:
+          type: number
+          description: Overall growth vs the previous period; negative means decline
+          example: 8.5
+        mtdAchievementPercent:
+          type: number
+          example: 78
+        ytdAchievementPercent:
+          type: number
+          example: 92
+
+    DistributorTarget:
+      type: object
+      required:
+        - targetValue
+        - achievedValue
+        - achievementPercent
+      properties:
+        targetValue:
+          type: number
+          description: Target amount in BDT
+          example: 168000
+        achievedValue:
+          type: number
+          description: Achieved amount in BDT
+          example: 142000
+        achievementPercent:
+          type: number
+          example: 85
+        weeklyChangePercent:
+          type: number
+          nullable: true
+          description: Change in achievement vs last week; null when there is no previous week
+          example: 4.2
+
+    DistributorInvoiceStatus:
+      type: object
+      required:
+        - invoiceReceived
+        - paymentStatus
+      properties:
+        invoiceReceived:
+          type: boolean
+          example: true
+        lastInvoiceDate:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-05-15"
+        paymentStatus:
+          type: string
+          enum: [ PENDING, PAID, PARTIAL, OVERDUE ]
+          example: "PENDING"
+
+    DistributorStockStatus:
+      type: object
+      required:
+        - zeroStockSkus
+        - slowMovingSkus
+        - stockHealthIndex
+      properties:
+        zeroStockSkus:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkuRef'
+        slowMovingSkus:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkuRef'
+        slowMovingThresholdDays:
+          type: integer
+          description: An SKU counts as slow moving after this many days without turnover
+          example: 30
+        stockHealthIndex:
+          type: number
+          description: 0-100
+          example: 78
+        inStockPercent:
+          type: number
+          example: 78
+        lowStockPercent:
+          type: number
+          example: 10
+
+    DistributorOverviewData:
+      type: object
+      required:
+        - distributorId
+        - growth
+        - target
+        - invoice
+        - stockStatus
+      properties:
+        distributorId:
+          type: integer
+          example: 101
+        lastVisitDate:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-05-12"
+        phoneNumber:
+          type: string
+          nullable: true
+          description: Number dialled by the call button; null hides the button
+          example: "+8801712345678"
+        growth:
+          $ref: '#/components/schemas/DistributorGrowth'
+        target:
+          $ref: '#/components/schemas/DistributorTarget'
+        invoice:
+          $ref: '#/components/schemas/DistributorInvoiceStatus'
+        stockStatus:
+          $ref: '#/components/schemas/DistributorStockStatus'
+
+    DistributorOverviewResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Distributor overview retrieved successfully."
+            data:
+              $ref: '#/components/schemas/DistributorOverviewData'
+
+    PendingIndentApproval:
+      type: object
+      required:
+        - indentCount
+        - totalValue
+      properties:
+        indentCount:
+          type: integer
+          description: Indents waiting for this manager's approval; 0 hides the banner
+          example: 7
+        totalValue:
+          type: number
+          description: Total value of those indents in BDT
+          example: 2800000
+
+    IndentSuggestion:
+      type: object
+      nullable: true
+      description: Null when there is nothing to suggest (the card is hidden)
+      required:
+        - skuCount
+        - belowCoverDays
+        - estimatedValue
+        - targetCoverDays
+      properties:
+        skuCount:
+          type: integer
+          description: SKUs still below `belowCoverDays` of cover even after pending indents
+          example: 33
+        belowCoverDays:
+          type: integer
+          example: 7
+        estimatedValue:
+          type: number
+          description: Estimated indent value in BDT to reach `targetCoverDays` of cover
+          example: 972000
+        targetCoverDays:
+          type: integer
+          example: 10
+
+    DistributorStockSummaryTiles:
+      type: object
+      required:
+        - totalSkus
+        - stockValue
+        - skuBelowCoverCount
+        - zeroStockSkuCount
+        - pendingIndentValue
+        - pendingIndentCount
+        - expiredSkuCount
+        - nearlyExpiredSkuCount
+      properties:
+        totalSkus:
+          type: integer
+          example: 267
+        stockValue:
+          type: number
+          description: Current stock value in BDT
+          example: 3909000
+        stockValueChangePercent:
+          type: number
+          nullable: true
+          description: Change vs the previous period; null when unknown
+          example: 4.8
+        skuBelowCoverCount:
+          type: integer
+          example: 126
+        coverThresholdDays:
+          type: integer
+          description: Days of cover used for `skuBelowCoverCount`
+          example: 7
+        zeroStockSkuCount:
+          type: integer
+          example: 18
+        pendingIndentValue:
+          type: number
+          description: BDT
+          example: 621000
+        pendingIndentCount:
+          type: integer
+          example: 37
+        expiredSkuCount:
+          type: integer
+          example: 12
+        nearlyExpiredSkuCount:
+          type: integer
+          example: 48
+        nearlyExpiredWithinDays:
+          type: integer
+          example: 30
+
+    StockHealthBucket:
+      type: object
+      required:
+        - level
+        - skuCount
+      properties:
+        level:
+          type: string
+          description: Coverage band; the server decides the day ranges for each band
+          enum: [ ZERO, CRITICAL, WATCH, HEALTHY ]
+          example: "CRITICAL"
+        skuCount:
+          type: integer
+          example: 19
+
+    DistributorStockSummaryData:
+      type: object
+      required:
+        - distributorId
+        - pendingApproval
+        - summary
+        - health
+      properties:
+        distributorId:
+          type: integer
+          example: 101
+        pendingApproval:
+          $ref: '#/components/schemas/PendingIndentApproval'
+        indentSuggestion:
+          $ref: '#/components/schemas/IndentSuggestion'
+        summary:
+          $ref: '#/components/schemas/DistributorStockSummaryTiles'
+        health:
+          type: array
+          description: Always all four levels, in order ZERO, CRITICAL, WATCH, HEALTHY
+          items:
+            $ref: '#/components/schemas/StockHealthBucket'
+
+    DistributorStockSummaryResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Distributor stock summary retrieved successfully."
+            data:
+              $ref: '#/components/schemas/DistributorStockSummaryData'
+
+    IssuePriority:
+      type: string
+      enum: [ HIGH, MEDIUM, LOW ]
+      example: "HIGH"
+
+    IssueStatus:
+      type: string
+      enum: [ PENDING, IN_PROGRESS, RESOLVED ]
+      example: "IN_PROGRESS"
+
+    DistributorIssue:
+      type: object
+      required:
+        - issueId
+        - title
+        - priority
+        - status
+      properties:
+        issueId:
+          type: integer
+          example: 9001
+        title:
+          type: string
+          example: "Payment delay - April invoice"
+        description:
+          type: string
+          nullable: true
+          example: "April invoice is 20 days overdue."
+        priority:
+          $ref: '#/components/schemas/IssuePriority'
+        status:
+          $ref: '#/components/schemas/IssueStatus'
+        assignedTo:
+          type: string
+          nullable: true
+          description: Display name of the person or team handling the issue
+          example: "Rahul Kumar"
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-05-25"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-05-10T09:30:00Z"
+
+    DistributorIssueListData:
+      type: object
+      required:
+        - items
+        - page
+        - pageSize
+        - totalCount
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DistributorIssue'
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 20
+        totalCount:
+          type: integer
+          description: Total matching issues across all pages
+          example: 3
+
+    DistributorIssueListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Distributor issues retrieved successfully."
+            data:
+              $ref: '#/components/schemas/DistributorIssueListData'
+
+    # --- ADD ISSUE SCHEMAS ---
+    IssueCategory:
+      type: string
+      enum: [ GENERAL, PAYMENT, STOCK, DELIVERY, EQUIPMENT, OTHER ]
+      example: "GENERAL"
+
+    TeamMember:
+      type: object
+      required:
+        - userId
+        - name
+      properties:
+        userId:
+          type: integer
+          example: 1768
+        name:
+          type: string
+          example: "Rahul Kumar"
+        designation:
+          type: string
+          nullable: true
+          example: "Territory Sales Officer"
+
+    TeamMemberListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Team members retrieved successfully."
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/TeamMember'
+
+    SaveIssueRequest:
+      type: object
+      required:
+        - distributorId
+        - title
+        - category
+        - priority
+        - assignToUserId
+        - deadline
+        - description
+        - latitude
+        - longitude
+        - deviceInfo
+      properties:
+        distributorId:
+          type: integer
+          description: Distributor id (the `id` from /user/distributors)
+          example: 101
+        title:
+          type: string
+          maxLength: 150
+          example: "Payment delay - April invoice"
+        category:
+          $ref: '#/components/schemas/IssueCategory'
+        priority:
+          $ref: '#/components/schemas/IssuePriority'
+        assignToUserId:
+          type: integer
+          description: The `userId` from /user/team-members
+          example: 1768
+        deadline:
+          type: string
+          format: date
+          description: Due date; today or later
+          example: "2026-10-10"
+        description:
+          type: string
+          maxLength: 1000
+          example: "April invoice is 20 days overdue. Distributor asked for a revised statement."
+        latitude:
+          type: string
+          description: Device latitude when the issue was saved (same format as save-attendance)
+          example: "23.780636"
+        longitude:
+          type: string
+          description: Device longitude when the issue was saved (same format as save-attendance)
+          example: "90.279541"
+        deviceInfo:
+          $ref: '#/components/schemas/DeviceInfo'
+
+    SaveIssueData:
+      type: object
+      required:
+        - issueId
+      properties:
+        issueId:
+          type: integer
+          example: 9004
+
+    SaveIssueResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            message:
+              example: "Issue saved successfully."
+            data:
+              $ref: '#/components/schemas/SaveIssueData'
 
     # --- SAVE ATTENDANCE SCHEMAS ---
     SaveAttendanceRequest:
@@ -1183,6 +2408,8 @@ components:
         - fromDate
         - toDate
         - leaveReasonId
+        - latitude
+        - longitude
         - deviceInfo
       properties:
         fromDate:
@@ -1197,6 +2424,14 @@ components:
           type: integer
           description: Id from /attendance/leave-reasons
           example: 2
+        latitude:
+          type: string
+          description: Device latitude when the leave was applied (same format as save-attendance)
+          example: "23.780636"
+        longitude:
+          type: string
+          description: Device longitude when the leave was applied (same format as save-attendance)
+          example: "90.279541"
         remarks:
           type: string
           description: Optional remarks
@@ -1211,3 +2446,781 @@ components:
           properties:
             message:
               example: "Leave request submitted successfully."
+
+    # --- TODAY'S STATS SCHEMAS ---
+    TodayStatsUnitRef:
+      type: object
+      description: Identifies one unit row at the requested level (web MhId / MhName).
+      required:
+        - unitId
+        - unitName
+        - levelKey
+      properties:
+        unitId:
+          type: integer
+          example: 12
+        unitName:
+          type: string
+          example: "North Region"
+        levelKey:
+          type: string
+          example: "REGION"
+
+    TodayAttendanceStats:
+      type: object
+      required:
+        - totalSr
+        - present
+        - absent
+        - onLeave
+        - visited
+        - productive
+        - idle
+        - active
+      properties:
+        totalSr:
+          type: integer
+          description: TotalSr
+          example: 104
+        present:
+          type: integer
+          description: PresentSr
+          example: 85
+        absent:
+          type: integer
+          description: AbsentSr
+          example: 6
+        onLeave:
+          type: integer
+          description: LeaveSr
+          example: 13
+        visited:
+          type: integer
+          description: SRs who visited at least one outlet (VisitSRCount)
+          example: 98
+        productive:
+          type: integer
+          description: SRs who took at least one order (OrderStartSRCount)
+          example: 95
+        idle:
+          type: integer
+          description: SRs with no activity for idleThresholdMinutes (IdleSRCount)
+          example: 11
+        active:
+          type: integer
+          description: SRs active within activeWindowMinutes (LastActiveSR)
+          example: 46
+        idleThresholdMinutes:
+          type: integer
+          example: 60
+        activeWindowMinutes:
+          type: integer
+          example: 60
+
+    TodayAttendanceUnit:
+      allOf:
+        - $ref: '#/components/schemas/TodayStatsUnitRef'
+        - $ref: '#/components/schemas/TodayAttendanceStats'
+
+    TodayAttendanceData:
+      type: object
+      required:
+        - total
+      properties:
+        total:
+          $ref: '#/components/schemas/TodayAttendanceStats'
+        units:
+          type: array
+          description: Only when levelKey is sent
+          items:
+            $ref: '#/components/schemas/TodayAttendanceUnit'
+
+    TodayAttendanceResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TodayAttendanceData'
+
+    CallProductivityStats:
+      type: object
+      required:
+        - scheduled
+        - visited
+        - productive
+        - remaining
+        - strikeRate
+        - productiveRate
+      properties:
+        scheduled:
+          type: number
+          example: 273
+        visited:
+          type: number
+          example: 230
+        productive:
+          type: number
+          example: 26
+        remaining:
+          type: number
+          example: 43
+        strikeRate:
+          type: number
+          description: Percent, 0-100
+          example: 58
+        productiveRate:
+          type: number
+          description: Percent, 0-100 (web Productivity)
+          example: 68
+
+    SkuProductivityStats:
+      type: object
+      required:
+        - lpc
+        - tlsd
+        - pCase
+      properties:
+        lpc:
+          type: number
+          description: Lines per productive call (web Lspc)
+          example: 2.3
+        tlsd:
+          type: number
+          description: Total lines sold per day
+          example: 1371
+        pCase:
+          type: number
+          example: 191
+
+    MemoMetrics:
+      type: object
+      required:
+        - avgMemo
+        - avgMemoValue
+        - lastDeliveryMemo
+        - lastDeliveryValue
+      properties:
+        avgMemo:
+          type: number
+          example: 4.6
+        avgMemoValue:
+          type: number
+          example: 25000
+        lastDeliveryMemo:
+          type: number
+          example: 21
+        lastDeliveryValue:
+          type: number
+          example: 34000
+        lastDeliveryWindowMinutes:
+          type: integer
+          description: Window the last-delivery figures cover, shown as "(1h)"
+          example: 60
+
+    TodayProductivityStats:
+      type: object
+      required:
+        - call
+        - sku
+      properties:
+        call:
+          $ref: '#/components/schemas/CallProductivityStats'
+        sku:
+          $ref: '#/components/schemas/SkuProductivityStats'
+        memo:
+          $ref: '#/components/schemas/MemoMetrics'
+
+    TodayProductivityUnit:
+      allOf:
+        - $ref: '#/components/schemas/TodayStatsUnitRef'
+        - $ref: '#/components/schemas/TodayProductivityStats'
+
+    TodayProductivityData:
+      type: object
+      required:
+        - total
+      properties:
+        total:
+          $ref: '#/components/schemas/TodayProductivityStats'
+        units:
+          type: array
+          description: Only when levelKey is sent
+          items:
+            $ref: '#/components/schemas/TodayProductivityUnit'
+
+    TodayProductivityResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TodayProductivityData'
+
+    TargetPeriod:
+      type: object
+      required:
+        - target
+        - order
+        - achievementPercent
+      properties:
+        target:
+          type: number
+          example: 600000
+        order:
+          type: number
+          example: 380000
+        achievementPercent:
+          type: number
+          example: 70
+        fromDate:
+          type: string
+          format: date
+          example: "2026-10-01"
+        toDate:
+          type: string
+          format: date
+          example: "2026-10-05"
+
+    MonthToDateTarget:
+      type: object
+      required:
+        - target
+        - achieved
+        - achievementPercent
+        - expectedPercent
+        - dayOfPeriod
+        - daysInPeriod
+      properties:
+        target:
+          type: number
+          example: 34000000
+        achieved:
+          type: number
+          example: 24000000
+        achievementPercent:
+          type: number
+          example: 71
+        expectedPercent:
+          type: number
+          description: Where achievement should be by today (dayOfPeriod / daysInPeriod)
+          example: 70
+        dayOfPeriod:
+          type: integer
+          example: 21
+        daysInPeriod:
+          type: integer
+          example: 30
+
+    TodayTargetStats:
+      type: object
+      required:
+        - today
+        - tillDate
+      properties:
+        today:
+          $ref: '#/components/schemas/TargetPeriod'
+        tillDate:
+          $ref: '#/components/schemas/TargetPeriod'
+        monthToDate:
+          $ref: '#/components/schemas/MonthToDateTarget'
+
+    TodayTargetUnit:
+      allOf:
+        - $ref: '#/components/schemas/TodayStatsUnitRef'
+        - $ref: '#/components/schemas/TodayTargetStats'
+
+    TodayTargetData:
+      type: object
+      required:
+        - total
+      properties:
+        total:
+          $ref: '#/components/schemas/TodayTargetStats'
+        units:
+          type: array
+          description: Only when levelKey is sent
+          items:
+            $ref: '#/components/schemas/TodayTargetUnit'
+
+    TodayTargetResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TodayTargetData'
+
+    TodayInventoryStats:
+      type: object
+      required:
+        - currentStockValue
+        - openingStockValue
+        - dbCount
+        - outOfStockSkuCount
+        - currentStockQty
+      properties:
+        currentStockValue:
+          type: number
+          example: 125000
+        openingStockValue:
+          type: number
+          description: Stock value at the start of the day
+          example: 25000
+        dbCount:
+          type: integer
+          description: Distributors in scope
+          example: 42
+        outOfStockSkuCount:
+          type: integer
+          example: 7000
+        currentStockQty:
+          type: number
+          example: 19000
+
+    TodayInventoryUnit:
+      allOf:
+        - $ref: '#/components/schemas/TodayStatsUnitRef'
+        - $ref: '#/components/schemas/TodayInventoryStats'
+
+    TodayInventoryData:
+      type: object
+      required:
+        - total
+      properties:
+        total:
+          $ref: '#/components/schemas/TodayInventoryStats'
+        units:
+          type: array
+          description: Only when levelKey is sent
+          items:
+            $ref: '#/components/schemas/TodayInventoryUnit'
+
+    TodayInventoryResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TodayInventoryData'
+
+    TodayZeroSalesStats:
+      type: object
+      required:
+        - activeOutlets
+        - zeroSalesOutlets
+        - activeSkus
+        - zeroSalesSkus
+      properties:
+        activeOutlets:
+          type: integer
+          example: 25
+        zeroSalesOutlets:
+          type: integer
+          example: 25
+        activeSkus:
+          type: integer
+          example: 25
+        zeroSalesSkus:
+          type: integer
+          example: 25
+        orderCount:
+          type: integer
+          description: Orders taken today ("No. Order" on My Team)
+          example: 9
+
+    TodayZeroSalesUnit:
+      allOf:
+        - $ref: '#/components/schemas/TodayStatsUnitRef'
+        - $ref: '#/components/schemas/TodayZeroSalesStats'
+
+    TodayZeroSalesData:
+      type: object
+      required:
+        - total
+      properties:
+        total:
+          $ref: '#/components/schemas/TodayZeroSalesStats'
+        units:
+          type: array
+          description: Only when levelKey is sent
+          items:
+            $ref: '#/components/schemas/TodayZeroSalesUnit'
+
+    TodayZeroSalesResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TodayZeroSalesData'
+
+    OrderBreakdownItem:
+      type: object
+      required:
+        - id
+        - name
+        - memoCount
+        - totalMemoCount
+        - memoPercent
+        - orderVsTargetQtyPercent
+        - orderValue
+      properties:
+        id:
+          type: integer
+          example: 301
+        name:
+          type: string
+          example: "Product 1"
+        memoCount:
+          type: integer
+          description: Memos containing this item (the 20 in "20/100")
+          example: 20
+        totalMemoCount:
+          type: integer
+          description: All memos in scope (the 100 in "20/100")
+          example: 100
+        memoPercent:
+          type: number
+          example: 25
+        orderVsTargetQtyPercent:
+          type: number
+          description: Ordered vs target quantity in UOM, percent
+          example: 20
+        orderValue:
+          type: number
+          example: 2000
+        targetValue:
+          type: number
+          example: 10000
+
+    OrderBreakdownData:
+      type: object
+      required:
+        - items
+        - page
+        - pageSize
+        - totalCount
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderBreakdownItem'
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 20
+        totalCount:
+          type: integer
+          example: 4
+
+    OrderBreakdownResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/OrderBreakdownData'
+
+    SrStatItem:
+      type: object
+      required:
+        - srId
+        - name
+        - isOnline
+        - strikeRate
+        - productiveRate
+        - lpc
+        - orderAchievementPercent
+      properties:
+        srId:
+          type: integer
+          example: 5012
+        name:
+          type: string
+          example: "Al Amin"
+        photoUrl:
+          type: string
+          nullable: true
+          example: "https://cdn.example.com/sr/5012.jpg"
+        locationName:
+          type: string
+          description: Route / salespoint the SR works today
+          example: "Hasan Market SLD"
+        territoryName:
+          type: string
+          example: "Mirpur Territory"
+        isOnline:
+          type: boolean
+          example: true
+        checkInAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-10-05T10:00:00"
+        firstOrderAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-10-05T10:45:00"
+        lastOrderAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-10-05T17:55:00"
+        strikeRate:
+          type: number
+          example: 17.54
+        productiveRate:
+          type: number
+          example: 80
+        lpc:
+          type: number
+          example: 4.22
+        orderAchievementPercent:
+          type: number
+          example: 46
+
+    SrStatListData:
+      type: object
+      required:
+        - items
+        - page
+        - pageSize
+        - totalCount
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SrStatItem'
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 20
+        totalCount:
+          type: integer
+          example: 104
+
+    SrStatListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/SrStatListData'
+
+    SrProfile:
+      type: object
+      required:
+        - srId
+        - name
+        - isOnline
+      properties:
+        srId:
+          type: integer
+          example: 5012
+        name:
+          type: string
+          example: "Robert Jenkins"
+        designation:
+          type: string
+          example: "Senior Sales Representative"
+        photoUrl:
+          type: string
+          nullable: true
+          example: "https://cdn.example.com/sr/5012.jpg"
+        phoneNo:
+          type: string
+          example: "+8801712345678"
+        whatsAppUrl:
+          type: string
+          nullable: true
+          example: "https://wa.me/8801712345678"
+        locationName:
+          type: string
+          example: "Mowlovi Bazar SLD"
+        territoryName:
+          type: string
+          example: "Mowlovi Bazar Territory"
+        isOnline:
+          type: boolean
+          example: true
+
+    SrWorkTimeline:
+      type: object
+      properties:
+        loggedInAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-10-05T08:45:00"
+        workMode:
+          type: string
+          enum: [ ON_FIELD, OFFICE, OTHER ]
+          example: "ON_FIELD"
+        spentMinutes:
+          type: integer
+          description: Time spent working so far today
+          example: 90
+        hasVisited:
+          type: boolean
+          example: true
+        firstOrderAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-10-05T11:45:00"
+        firstOrderOutlet:
+          type: string
+          nullable: true
+          example: "Fresh mart"
+        lastOrderAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-10-05T14:45:00"
+        lastOrderOutlet:
+          type: string
+          nullable: true
+          example: "Fresh mart"
+
+    SrWorkCounts:
+      type: object
+      required:
+        - scheduled
+        - visited
+        - productive
+        - lpc
+      properties:
+        scheduled:
+          type: integer
+          example: 20
+        visited:
+          type: integer
+          example: 16
+        productive:
+          type: integer
+          example: 12
+        lpc:
+          type: number
+          example: 1.24
+
+    SrTarget:
+      type: object
+      required:
+        - todayTarget
+        - orderValue
+        - achievementPercent
+      properties:
+        todayTarget:
+          type: number
+          example: 20000
+        orderValue:
+          type: number
+          example: 16000
+        achievementPercent:
+          type: number
+          example: 16
+
+    SrDetailData:
+      type: object
+      required:
+        - profile
+        - timeline
+        - work
+        - target
+      properties:
+        profile:
+          $ref: '#/components/schemas/SrProfile'
+        timeline:
+          $ref: '#/components/schemas/SrWorkTimeline'
+        work:
+          $ref: '#/components/schemas/SrWorkCounts'
+        target:
+          $ref: '#/components/schemas/SrTarget'
+
+    SrDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/SrDetailData'
+
+    SrOrderItem:
+      type: object
+      required:
+        - id
+        - name
+        - qty
+        - memoCount
+      properties:
+        id:
+          type: integer
+          example: 8801
+        name:
+          type: string
+          example: "Starship"
+        subName:
+          type: string
+          description: Second line, e.g. the SKU under a product
+          example: "Starship FCMP 10 gm"
+        qty:
+          type: number
+          example: 24
+        memoCount:
+          type: integer
+          example: 4
+        specialDiscount:
+          type: number
+          example: 0
+        promoDiscount:
+          type: number
+          example: 0
+        totalDiscount:
+          type: number
+          example: 0
+        freeValue:
+          type: number
+          example: 0
+        orderQtyUom:
+          type: number
+          description: Ordered quantity in UOM
+          example: 0.73
+        freeQty:
+          type: number
+          example: 0
+
+    SrOrderListData:
+      type: object
+      required:
+        - items
+        - page
+        - pageSize
+        - totalCount
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SrOrderItem'
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 20
+        totalCount:
+          type: integer
+          example: 2
+
+    SrOrderListResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/SrOrderListData'

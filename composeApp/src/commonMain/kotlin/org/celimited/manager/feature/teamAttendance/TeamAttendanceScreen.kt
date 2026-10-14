@@ -40,12 +40,34 @@ import manager.composeapp.generated.resources.ic_icon_clock
 import manager.composeapp.generated.resources.ic_icon_keyboard_next
 import manager.composeapp.generated.resources.ic_icon_location
 import manager.composeapp.generated.resources.ic_icon_search
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.collections.immutable.ImmutableList
+import org.celimited.manager.component.ErrorDialog
+import org.celimited.manager.model.attendance.TeamMemberStatus
 import org.jetbrains.compose.resources.painterResource
+import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
 fun TeamAttendanceRoute(
     onBackClick: () -> Unit,
+    onSessionExpired: () -> Unit,
+    viewModel: TeamAttendanceViewModel = koinViewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        viewModel.onScreenOpened()
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.uiEffect.collect { effect ->
+            when (effect) {
+                TeamAttendanceUiEffect.SessionExpired -> onSessionExpired()
+            }
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars,
@@ -59,22 +81,58 @@ fun TeamAttendanceRoute(
         TeamAttendanceScreen(
             modifier = Modifier
                 .padding(padding),
+            levels = uiState.levels,
+            selectedLevelKey = uiState.selectedLevelKey,
+            isLoadingLevels = uiState.isLoadingLevels,
+            summary = uiState.summary,
+            managers = uiState.managers,
+            isLoadingSummary = uiState.isLoadingSummary,
+            onLevelSelected = viewModel::onLevelSelected
+        )
+    }
 
-            )
+    uiState.errorDialog?.let { error ->
+        ErrorDialog(
+            message = error.message,
+            onClose = viewModel::onDismissError,
+            onRetry = if (error.canRetry) viewModel::onRetry else null
+        )
     }
 }
 
 @Composable
 fun TeamAttendanceScreen(
     modifier: Modifier = Modifier,
+    levels: ImmutableList<HierarchyLevelTabUi>,
+    selectedLevelKey: String?,
+    isLoadingLevels: Boolean,
+    summary: TeamSummaryUi,
+    managers: ImmutableList<ManagerItemUi>,
+    isLoadingSummary: Boolean,
+    onLevelSelected: (String) -> Unit
 ) {
+    val listTitle = remember(levels, selectedLevelKey) {
+        val levelName = levels.firstOrNull { it.key == selectedLevelKey }?.name
+        if (levelName == null) "Manager List" else "$levelName Manager List"
+    }
+
     Column(
         modifier = modifier
     ) {
         TeamSearchBar()
-        TeamFilterTabs()
-        TeamAttendanceCards()
-        ManagerListUI()
+        TeamFilterTabs(
+            tabs = levels,
+            selectedKey = selectedLevelKey,
+            isLoading = isLoadingLevels,
+            onTabSelected = onLevelSelected
+        )
+        TeamAttendanceCards(summary = summary)
+        ManagerListUI(
+            title = listTitle,
+            managers = managers,
+            // Levels loading also means no summary yet — show one spinner for both.
+            isLoading = isLoadingSummary || isLoadingLevels
+        )
     }
 }
 
@@ -107,17 +165,35 @@ fun TeamSearchBar() {
 }
 
 @Composable
-fun TeamFilterTabs() {
-    val tabs = listOf("Division\n(2/20)", "Region\n(2/20)", "Area\n(2/20)", "Territory\n(2/20)")
-    var selectedTab by remember { mutableIntStateOf(0) }
+fun TeamFilterTabs(
+    tabs: ImmutableList<HierarchyLevelTabUi>,
+    selectedKey: String?,
+    isLoading: Boolean,
+    onTabSelected: (String) -> Unit
+) {
+    val containerModifier = Modifier
+        .fillMaxWidth()
+        .padding(top = 20.dp, bottom = 20.dp, start = 10.dp, end = 10.dp)
+        .background(color = Color(0xFFF3F4F6), shape = RoundedCornerShape(25.dp))
+        .padding(6.dp)
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 20.dp, bottom = 20.dp, start = 10.dp, end = 10.dp)
-            .background(color = Color(0xFFF3F4F6), shape = RoundedCornerShape(25.dp))
-            .padding(6.dp)
-    ) {
+    if (tabs.isEmpty()) {
+        // Same pill, so the layout below doesn't jump when the levels arrive.
+        Box(modifier = containerModifier.height(44.dp), contentAlignment = Alignment.Center) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = Color(0xFF582FFF),
+                    strokeWidth = 2.dp
+                )
+            }
+        }
+        return
+    }
+
+    val selectedTab = tabs.indexOfFirst { it.key == selectedKey }.coerceAtLeast(0)
+
+    BoxWithConstraints(modifier = containerModifier) {
         val tabWidth = maxWidth / tabs.size
 
         val indicatorOffset by animateDpAsState(
@@ -140,7 +216,7 @@ fun TeamFilterTabs() {
 
         // Tab labels on top
         Row(modifier = Modifier.fillMaxWidth()) {
-            tabs.forEachIndexed { index, title ->
+            tabs.forEachIndexed { index, tab ->
                 val isSelected = selectedTab == index
 
                 val textColor by animateColorAsState(
@@ -155,12 +231,12 @@ fun TeamFilterTabs() {
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() }
-                        ) { selectedTab = index }
+                        ) { onTabSelected(tab.key) }
                         .padding(vertical = 6.dp, horizontal = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = title,
+                        text = tab.label,
                         fontSize = 12.sp,
                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                         color = textColor,
@@ -174,18 +250,18 @@ fun TeamFilterTabs() {
 }
 
 @Composable
-fun TeamAttendanceCards() {
+fun TeamAttendanceCards(summary: TeamSummaryUi) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        TeamInfoCard(number = "20", label = "Total",    bgColor = Color(0xFFD7E7FF), modifier = Modifier.weight(1f))
-        TeamInfoCard(number = "4",  label = "Present",  bgColor = Color(0xFFDCFCE7), modifier = Modifier.weight(1f))
-        TeamInfoCard(number = "2",  label = "Late",     bgColor = Color(0xFFFEF3C6), modifier = Modifier.weight(1f))
-        TeamInfoCard(number = "2",  label = "On leave", bgColor = Color(0xFFFFD99F), modifier = Modifier.weight(1f))
-        TeamInfoCard(number = "1",  label = "Absent",   bgColor = Color(0xFFFFC7C9), modifier = Modifier.weight(1f))
+        TeamInfoCard(number = summary.total.toString(),   label = "Total",    bgColor = Color(0xFFD7E7FF), modifier = Modifier.weight(1f))
+        TeamInfoCard(number = summary.present.toString(), label = "Present",  bgColor = Color(0xFFDCFCE7), modifier = Modifier.weight(1f))
+        TeamInfoCard(number = summary.late.toString(),    label = "Late",     bgColor = Color(0xFFFEF3C6), modifier = Modifier.weight(1f))
+        TeamInfoCard(number = summary.leave.toString(),   label = "On leave", bgColor = Color(0xFFFFD99F), modifier = Modifier.weight(1f))
+        TeamInfoCard(number = summary.absent.toString(),  label = "Absent",   bgColor = Color(0xFFFFC7C9), modifier = Modifier.weight(1f))
     }
 }
 
@@ -215,21 +291,18 @@ fun TeamInfoCard(number: String, label: String, bgColor: Color, modifier: Modifi
 }
 
 @Composable
-fun ManagerListUI () {
-    val managers = listOf(
-        ManagerItem("Sarah Johnson", "Sales Manager", "North / Metro / Zone A", "Present", "09:05 AM"),
-        ManagerItem("Michael Chen", "Regional Lead", "East / Suburban / Zone B", "Late", "09:45 AM"),
-        ManagerItem("Emily Rodriguez", "Team Lead", "West / Central / Zone C", "Present", "08:55 AM"),
-        ManagerItem("James Williams", "Sales Executive", "South / Industrial / Zone D", "On Leave", null),
-    )
-
+fun ManagerListUI(
+    title: String,
+    managers: ImmutableList<ManagerItemUi>,
+    isLoading: Boolean
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 10.dp, vertical = 24.dp)
     ) {
         Text(
-            text = "Division Manager List",
+            text = title,
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             color = Color(0xFF111827)
@@ -237,46 +310,42 @@ fun ManagerListUI () {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(managers) { manager ->
-                ManagerListItem(manager)
+        when {
+            isLoading -> Box(
+                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color(0xFF582FFF), modifier = Modifier.size(28.dp))
+            }
+
+            managers.isEmpty() -> Text(
+                text = "No managers found",
+                fontSize = 13.sp,
+                color = Color(0xFF6B7280),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(24.dp)
+            )
+
+            else -> LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(managers, key = { it.userId }) { manager ->
+                    ManagerListItem(manager)
+                }
             }
         }
     }
 }
 
-data class ManagerItem(
-    val name: String,
-    val designation: String,
-    val location: String,
-    val status: String,
-    val time: String?
-)
-
 @Composable
-fun ManagerListItem(manager: ManagerItem) {
-    val statusBgColor = when (manager.status) {
-        "Present"  -> Color(0xFFDCFCE7)
-        "Late"     -> Color(0xFFFEF3C6)
-        "On Leave" -> Color(0xFFFFD99F)
-        "Absent"   -> Color(0xFFFFC7C9)
-        else       -> Color(0xFFF3F4F6)
+fun ManagerListItem(manager: ManagerItemUi) {
+    val (statusLabel, statusBgColor, statusTextColor) = when (manager.status) {
+        TeamMemberStatus.PRESENT -> Triple("Present", Color(0xFFDCFCE7), Color(0xFF16A34A))
+        TeamMemberStatus.LATE -> Triple("Late", Color(0xFFFEF3C6), Color(0xFFD97706))
+        TeamMemberStatus.LEAVE -> Triple("On Leave", Color(0xFFFFD99F), Color(0xFFEA580C))
+        TeamMemberStatus.ABSENT -> Triple("Absent", Color(0xFFFFC7C9), Color(0xFFDC2626))
+        TeamMemberStatus.UNKNOWN -> Triple("Unknown", Color(0xFFF3F4F6), Color(0xFF6B7280))
     }
-    val statusTextColor = when (manager.status) {
-        "Present"  -> Color(0xFF16A34A)
-        "Late"     -> Color(0xFFD97706)
-        "On Leave" -> Color(0xFFEA580C)
-        "Absent"   -> Color(0xFFDC2626)
-        else       -> Color(0xFF6B7280)
-    }
-
-    // Generate initials from name
-    val initials = manager.name
-        .split(" ")
-        .take(2)
-        .joinToString("") { it.first().uppercase() }
 
     Box(
         modifier = Modifier
@@ -301,7 +370,7 @@ fun ManagerListItem(manager: ManagerItem) {
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = initials,
+                    text = manager.initials,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -319,30 +388,32 @@ fun ManagerListItem(manager: ManagerItem) {
                     color = Color(0xFF111827)
                 )
 
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = manager.designation,
-                    fontSize = 14.sp,
-                    color = Color(0xFF6B7280)
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Location row
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_icon_location),
-                        contentDescription = null,
-                        tint = Color(0xFF9CA3AF),
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Spacer(modifier = Modifier.width(3.dp))
+                // The API often sends designation/location as "", so those rows are skipped then.
+                if (manager.designation.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = manager.location,
-                        fontSize = 12.sp,
-                        color = Color(0xFF9CA3AF)
+                        text = manager.designation,
+                        fontSize = 14.sp,
+                        color = Color(0xFF6B7280)
                     )
+                }
+
+                if (manager.location.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            painter = painterResource(Res.drawable.ic_icon_location),
+                            contentDescription = null,
+                            tint = Color(0xFF9CA3AF),
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = manager.location,
+                            fontSize = 12.sp,
+                            color = Color(0xFF9CA3AF)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -356,7 +427,7 @@ fun ManagerListItem(manager: ManagerItem) {
                             .padding(horizontal = 10.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = manager.status,
+                            text = statusLabel,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             color = statusTextColor
@@ -364,7 +435,7 @@ fun ManagerListItem(manager: ManagerItem) {
                     }
 
                     // Time with clock icon
-                    if (manager.time != null) {
+                    if (manager.checkInTime != null) {
                         Spacer(modifier = Modifier.width(10.dp))
                         Icon(
                             painter = painterResource(Res.drawable.ic_icon_clock),
@@ -374,7 +445,7 @@ fun ManagerListItem(manager: ManagerItem) {
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = manager.time,
+                            text = manager.checkInTime,
                             fontSize = 12.sp,
                             color = Color(0xFF6B7280)
                         )

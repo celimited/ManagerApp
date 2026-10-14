@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -38,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,6 +61,8 @@ import manager.composeapp.generated.resources.Res
 import manager.composeapp.generated.resources.ic_app_logo
 import manager.composeapp.generated.resources.ic_icon_ai_sales
 import manager.composeapp.generated.resources.ic_icon_bag
+import manager.composeapp.generated.resources.ic_icon_box
+import manager.composeapp.generated.resources.ic_icon_truck
 import manager.composeapp.generated.resources.ic_icon_keyboard_next
 import manager.composeapp.generated.resources.ic_icon_location
 import manager.composeapp.generated.resources.ic_icon_next
@@ -70,6 +74,10 @@ import manager.composeapp.generated.resources.ic_profile_placeholder
 import manager.composeapp.generated.resources.ic_icon_attendance
 import manager.composeapp.generated.resources.ic_icon_cart
 import manager.composeapp.generated.resources.ic_icon_peoples
+import org.celimited.manager.component.ErrorDialog
+import org.celimited.manager.component.LockedFeature
+import org.celimited.manager.core.common.Feature
+import org.celimited.manager.core.common.location.rememberLocationPermissionRequester
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 
@@ -77,9 +85,39 @@ import org.jetbrains.compose.resources.painterResource
 fun HomeRoute(
     onAISalesReportClick: () -> Unit,
     onAttendanceCardClick: () -> Unit,
+    onTodayStatsClick: () -> Unit,
+    onStockStatusClick: () -> Unit,
+    onFeatureLocked: () -> Unit,
     viewModel: HomeViewModel = koinViewModel()
 ){
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val requestLocationPermission = rememberLocationPermissionRequester(
+        onResult = viewModel::onLocationPermissionResult
+    )
+
+    LaunchedEffect(Unit) {
+        viewModel.onScreenShown()
+        viewModel.uiEffect.collect { effect ->
+            when (effect) {
+                HomeUiEffect.NavigateToAttendance -> onAttendanceCardClick()
+                HomeUiEffect.RequestLocationPermission -> requestLocationPermission()
+                HomeUiEffect.NavigateToTodayStats -> onTodayStatsClick()
+                HomeUiEffect.NavigateToDistributorList -> onStockStatusClick()
+                HomeUiEffect.ShowUnderDevelopment -> onFeatureLocked()
+            }
+        }
+    }
+
+    AttendancePopupHost(
+        popup = uiState.attendancePopup,
+        onDistributorSelected = viewModel::onDistributorSelected,
+        onLateReasonSelected = viewModel::onLateReasonSelected,
+        onRemarksChanged = viewModel::onRemarksChanged,
+        onSubmit = viewModel::onSubmitAttendance,
+        onDismiss = viewModel::onAttendancePopupDismissed,
+        onGeofenceWarningConfirmed = viewModel::onGeofenceWarningConfirmed,
+        onGeofenceWarningDismissed = viewModel::onGeofenceWarningDismissed
+    )
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -90,11 +128,21 @@ fun HomeRoute(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            onAttendanceCardClick = onAttendanceCardClick,
+            onAttendanceCardClick = viewModel::onAttendanceCardClick,
+            onGiveAttendanceClick = viewModel::onGiveAttendanceClick,
             onAISalesReportClick = onAISalesReportClick,
+            onTodayStatsClick = viewModel::onTodayStatsClick,
+            onStockStatusClick = viewModel::onStockStatusClick,
+            onLockedFeatureClick = viewModel::onLockedFeatureClick,
             userName = uiState.userName,
-            userRole = uiState.userRole
+            userRole = uiState.userRole,
+            attendanceCard = uiState.attendanceCard
         )
+    }
+
+    // Composed after the check-in popup so it stacks on top of it.
+    uiState.errorDialog?.let { error ->
+        ErrorDialog(message = error.message, onClose = viewModel::onDismissError)
     }
 }
 
@@ -102,9 +150,14 @@ fun HomeRoute(
 fun HomeScreen(
     modifier: Modifier,
     onAttendanceCardClick: () -> Unit,
+    onGiveAttendanceClick: () -> Unit,
     onAISalesReportClick: () -> Unit,
+    onTodayStatsClick: () -> Unit,
+    onStockStatusClick: () -> Unit,
+    onLockedFeatureClick: () -> Unit,
     userName: String,
-    userRole: String
+    userRole: String,
+    attendanceCard: AttendanceCardUi
 ) {
 
     TopBackground()
@@ -113,7 +166,7 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
     ){
-        TopProfile(name = userName, role = userRole)
+        TopProfile(name = userName, role = userRole, onLockedFeatureClick = onLockedFeatureClick)
         PendingApprovalsSection()
 
         Column(
@@ -124,11 +177,14 @@ fun HomeScreen(
                 onAISalesReportClick = onAISalesReportClick
             )
             MyAttendanceSection(
-                onAttendanceCardClick = onAttendanceCardClick
+                status = attendanceCard,
+                onAttendanceCardClick = onAttendanceCardClick,
+                onGiveAttendanceClick = onGiveAttendanceClick
             )
-            WorkPlanSection()
-            TodayStatsSection()
-            MTDPerformanceSection()
+            WorkPlanSection(onLockedFeatureClick = onLockedFeatureClick)
+            TodayStatsSection(onArrowClick = onTodayStatsClick)
+            MTDPerformanceSection(onLockedFeatureClick = onLockedFeatureClick)
+            StockStatusSection(onArrowClick = onStockStatusClick)
         }
     }
 }
@@ -159,7 +215,7 @@ fun TopBackground(){
 }
 
 @Composable
-fun TopProfile(name: String, role: String){
+fun TopProfile(name: String, role: String, onLockedFeatureClick: () -> Unit){
     Row(
         modifier = Modifier.fillMaxWidth()
             .padding(top = 24.dp, start = 12.dp, end = 12.dp),
@@ -204,43 +260,49 @@ fun TopProfile(name: String, role: String){
 
         Spacer(modifier = Modifier.weight(1f))
 
-        Box(
-            modifier = Modifier.size(44.dp),
-            contentAlignment = Alignment.Center
+        LockedFeature(
+            locked = Feature.Notifications.isLocked,
+            onLockedClick = onLockedFeatureClick,
+            shape = CircleShape
         ) {
             Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(CircleShape)
-                    .background(Color.White),
+                modifier = Modifier.size(44.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Image(
-                    painter = painterResource(Res.drawable.ic_icon_notification),
-                    contentDescription = "Notification",
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            var count: Int = 8
-
-            if (count > 0) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .offset(x = 4.dp, y = (-4).dp)
+                        .matchParentSize()
                         .clip(CircleShape)
-                        .background(Color.Red)
-                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                        .background(Color.White),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = if (count > 9) "9+" else count.toString(),
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 10.sp
+                    Image(
+                        painter = painterResource(Res.drawable.ic_icon_notification),
+                        contentDescription = "Notification",
+                        modifier = Modifier.size(22.dp)
                     )
+                }
+
+                var count: Int = 8
+
+                if (count > 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 4.dp, y = (-4).dp)
+                            .clip(CircleShape)
+                            .background(Color.Red)
+                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (count > 9) "9+" else count.toString(),
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 10.sp
+                        )
+                    }
                 }
             }
         }
@@ -350,7 +412,7 @@ fun AISalesReportSection(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "AI Reporting",
+                        text = "AI Business Assistant",
                         color = Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -401,10 +463,47 @@ fun AISalesReportSection(
     }
 }
 
+private val AttendanceTitleColor = Color(0xFF1F1059)
+private val AttendanceOrange = Color(0xFFF07B14)
+private val AttendanceRed = Color(0xFFE53935)
+private val AttendanceLavender = Color(0xFF8B7BE8)
+private val PillGreen = Color(0xFFCFF7D3)
+private val PillPeach = Color(0xFFFFCB99)
+
+/** Message line, its color and the status pill (null = none) for each card state. */
+private data class AttendanceCardContent(
+    val message: String,
+    val messageColor: Color,
+    val pillText: String? = null,
+    val pillColor: Color = Color.Transparent
+)
+
+private fun AttendanceCardUi.content(): AttendanceCardContent = when (this) {
+    AttendanceCardUi.Unknown ->
+        AttendanceCardContent("Tap to see today's attendance", Color.DarkGray)
+    AttendanceCardUi.NotGiven ->
+        AttendanceCardContent("You haven't given attendance yet !", AttendanceOrange)
+    AttendanceCardUi.TimePassed ->
+        AttendanceCardContent("Attendance time has passed !", AttendanceRed)
+    is AttendanceCardUi.CheckedIn -> when {
+        time == null -> AttendanceCardContent("You have checked in today", Color.Black, "Present", PillGreen)
+        isLate == true -> AttendanceCardContent("You Checked in Late    $time", Color.Black, "Late", PillPeach)
+        else -> AttendanceCardContent("Checked in at    $time", Color.Black, "On time", PillGreen)
+    }
+    AttendanceCardUi.LeavePending ->
+        AttendanceCardContent("Your leave approval is pending", AttendanceLavender, "Pending", PillPeach)
+    AttendanceCardUi.OnLeave ->
+        AttendanceCardContent("You are on leave", AttendanceLavender, "On Leave", PillPeach)
+}
+
 @Composable
 fun MyAttendanceSection (
-    onAttendanceCardClick: () -> Unit
+    status: AttendanceCardUi,
+    onAttendanceCardClick: () -> Unit,
+    onGiveAttendanceClick: () -> Unit
 ) {
+    val content = remember(status) { status.content() }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -426,9 +525,10 @@ fun MyAttendanceSection (
         ) {
             Row {
                 Text(
-                    text = "My Attendance",
+                    text = "Attendance",
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = AttendanceTitleColor
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
@@ -443,12 +543,15 @@ fun MyAttendanceSection (
 
             Row (
                 modifier = Modifier
-                    .padding(top = 15.dp)
+                    .fillMaxWidth()
+                    .padding(top = 15.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
 
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Checked in at     9:12",
+                        text = content.message,
+                        color = content.messageColor,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         lineHeight = 14.sp
@@ -456,6 +559,7 @@ fun MyAttendanceSection (
 
                     Text(
                         text = "You Have 4 leave plan this month",
+                        color = AttendanceOrange,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         lineHeight = 12.sp,
@@ -463,13 +567,52 @@ fun MyAttendanceSection (
                     )
                 }
 
+                // Absent is everyone's starting state, so it always offers check-in (late after the deadline).
+                if (status == AttendanceCardUi.NotGiven || status == AttendanceCardUi.TimePassed) {
+                    Button(
+                        onClick = onGiveAttendanceClick,
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF582FFF)),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Text(
+                            text = "Give attendance",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                } else if (content.pillText != null) {
+                    AttendanceStatusPill(text = content.pillText, color = content.pillColor)
+                }
             }
         }
     }
 }
 
+/** Status only — not clickable. */
 @Composable
-fun WorkPlanSection() {
+private fun AttendanceStatusPill(text: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(color)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = Color.Black,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            lineHeight = 12.sp
+        )
+    }
+}
+
+@Composable
+fun WorkPlanSection(onLockedFeatureClick: () -> Unit) {
     // Dummy data — replace with API-driven list (ViewModel/StateFlow) later.
     val days = remember {
         listOf(
@@ -485,144 +628,152 @@ fun WorkPlanSection() {
 
     var selectedDay by remember { mutableStateOf(days.first()) }
 
-    Box(
+    LockedFeature(
+        locked = Feature.WorkPlan.isLocked,
+        onLockedClick = onLockedFeatureClick,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 12.dp, end = 12.dp, top = 18.dp)
-            .border(
-                width = 1.dp,
-                color = Color(0xFFCBBFFF),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
-        // removed outer .clickable — no reason for the whole card to be tappable
-        // when individual dates and the button already have actions
+            .padding(start = 12.dp, end = 12.dp, top = 18.dp),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    width = 1.dp,
+                    color = Color(0xFFCBBFFF),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White)
+            // removed outer .clickable — no reason for the whole card to be tappable
+            // when individual dates and the button already have actions
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "Work Plan",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2D1B69)
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                Image(
-                    painter = painterResource(Res.drawable.ic_icon_next),
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = 5.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Date row
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Column(
+                modifier = Modifier.padding(12.dp)
             ) {
-                items(days, key = { it.date }) { day ->
-                    val isSelected = day == selectedDay
-                    Column(
-                        modifier = Modifier
-                            .width(42.dp).height(50.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (isSelected) Color(0xFF4B2AC4) else Color.Transparent
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Work Plan",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2D1B69)
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Image(
+                        painter = painterResource(Res.drawable.ic_icon_next),
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 5.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Date row
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(days, key = { it.date }) { day ->
+                        val isSelected = day == selectedDay
+                        Column(
+                            modifier = Modifier
+                                .width(42.dp).height(50.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (isSelected) Color(0xFF4B2AC4) else Color.Transparent
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isSelected) Color.Transparent else Color(0xFFE0DCEF),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .clickable { selectedDay = day }
+                                .padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = day.date.toString(),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) Color.White else Color(0xFF2D1B69),
+                                lineHeight = 18.sp
                             )
-                            .border(
-                                width = 1.dp,
-                                color = if (isSelected) Color.Transparent else Color(0xFFE0DCEF),
-                                shape = RoundedCornerShape(10.dp)
+                            Text(
+                                text = day.dayShort,
+                                fontSize = 12.sp,
+                                color = if (isSelected) Color.White.copy(alpha = 0.85f) else Color.Gray,
+                                lineHeight = 16.sp
                             )
-                            .clickable { selectedDay = day }
-                            .padding(vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = day.date.toString(),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isSelected) Color.White else Color(0xFF2D1B69),
-                            lineHeight = 18.sp
-                        )
-                        Text(
-                            text = day.dayShort,
-                            fontSize = 12.sp,
-                            color = if (isSelected) Color.White.copy(alpha = 0.85f) else Color.Gray,
-                            lineHeight = 16.sp
-                        )
+                        }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // Reporting place
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_icon_bag),
-                    contentDescription = null,
-                    tint = Color.DarkGray,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Reporting place : ",
-                    fontSize = 13.sp,
-                    color = Color.DarkGray
-                )
-                Text(
-                    text = selectedDay.reportingPlace,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.Black
-                )
-            }
+                // Reporting place
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_icon_bag),
+                        contentDescription = null,
+                        tint = Color.DarkGray,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Reporting place : ",
+                        fontSize = 13.sp,
+                        color = Color.DarkGray
+                    )
+                    Text(
+                        text = selectedDay.reportingPlace,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Black
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            // Visit route
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_icon_location),
-                    contentDescription = null,
-                    tint = Color.DarkGray,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Visit Route : ",
-                    fontSize = 13.sp,
-                    color = Color.DarkGray
-                )
-                Text(
-                    text = selectedDay.visitRoute,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.Black
-                )
-            }
+                // Visit route
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_icon_location),
+                        contentDescription = null,
+                        tint = Color.DarkGray,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Visit Route : ",
+                        fontSize = 13.sp,
+                        color = Color.DarkGray
+                    )
+                    Text(
+                        text = selectedDay.visitRoute,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Black
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // View Visit Details button
-            Button(
-                onClick = { /* navigate to visit details for selectedDay */ },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(46.dp),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4B2AC4))
-            ) {
-                Text(
-                    text = "View Visit Details",
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold
-                )
+                // View Visit Details button
+                Button(
+                    onClick = { /* navigate to visit details for selectedDay */ },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4B2AC4))
+                ) {
+                    Text(
+                        text = "View Visit Details",
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }
@@ -653,7 +804,10 @@ fun TodayStatsSection(
             .fillMaxWidth()
             .padding(start = 12.dp, end = 12.dp, top = 28.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
                 text = " Today's Stats",
                 fontSize = 16.sp,
@@ -661,13 +815,9 @@ fun TodayStatsSection(
                 color = Color(0xFF2D1B69)
             )
             Spacer(modifier = Modifier.weight(1f))
-            Icon(
-                painter = painterResource(Res.drawable.ic_icon_next),
-                contentDescription = null,
-                tint = Color(0xFF2D1B69),
-                modifier = Modifier
-                    .size(16.dp)
-                    .clickable { onArrowClick() }
+            SectionArrowButton(
+                contentDescription = "Open Today's Stats",
+                onClick = onArrowClick
             )
         }
 
@@ -743,94 +893,103 @@ fun MTDPerformanceSection(
         m2mGrowthPercent = 10,
         ytdGrowthIsPositive = false
     ),
-    onArrowClick: () -> Unit = {}
+    onArrowClick: () -> Unit = {},
+    onLockedFeatureClick: () -> Unit
 ) {
 
-    Column (
+    LockedFeature(
+        locked = Feature.MtdPerformance.isLocked,
+        onLockedClick = onLockedFeatureClick,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 12.dp, end = 12.dp, top = 28.dp)
+            .padding(start = 12.dp, end = 12.dp, top = 28.dp),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "MTD Performance",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF2D1B69)
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            Icon(
-                painter = painterResource(Res.drawable.ic_icon_next),
-                contentDescription = null,
-                tint = Color(0xFF2D1B69),
-                modifier = Modifier
-                    .size(16.dp)
-                    .clickable { onArrowClick() }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Box(
+        Column (
             modifier = Modifier
                 .fillMaxWidth()
-                .border(
-                    width = 1.dp,
-                    color = Color(0xFFE0DCEF),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color.White)
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-
-                MetricProgressRow(
-                    label = "MTD Achieved",
-                    percent = data.mtdAchievedPercent,
-                    progressColor = Color(0xFFFF7A00)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "MTD Performance",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF2D1B69)
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                MetricProgressRow(
-                    label = "YTD Achieved",
-                    percent = data.ytdAchievedPercent,
-                    progressColor = Color(0xFFFFB800)
+                Spacer(modifier = Modifier.weight(1f))
+                Icon(
+                    painter = painterResource(Res.drawable.ic_icon_next),
+                    contentDescription = null,
+                    tint = Color(0xFF2D1B69),
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable { onArrowClick() }
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+            }
 
-                MetricProgressRow(
-                    label = "Till Date Target",
-                    percent = data.tillDateTargetPercent,
-                    progressColor = Color(0xFFFF4D6D)
-                )
+            Spacer(modifier = Modifier.height(12.dp))
 
-                Spacer(modifier = Modifier.height(14.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = Color(0xFFE0DCEF),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
 
-                // Bottom pill badges
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    GrowthPill(
-                        label = "MTD",
-                        percent = data.mtdGrowthPercent,
-                        isPositive = true,
-                        backgroundColor = Color(0xFFE3F7E9),
-                        contentColor = Color(0xFF1E9E4A)
+                    MetricProgressRow(
+                        label = "MTD Achieved",
+                        percent = data.mtdAchievedPercent,
+                        progressColor = Color(0xFFFF7A00)
                     )
-                    GrowthPill(
-                        label = "YTD",
-                        percent = data.ytdGrowthPercent,
-                        isPositive = data.ytdGrowthIsPositive,
-                        backgroundColor = Color(0xFFFFF9DB),
-                        contentColor = Color(0xFF9E7C1E)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    MetricProgressRow(
+                        label = "YTD Achieved",
+                        percent = data.ytdAchievedPercent,
+                        progressColor = Color(0xFFFFB800)
                     )
-                    GrowthPill(
-                        label = "M2M",
-                        percent = data.m2mGrowthPercent,
-                        isPositive = true,
-                        backgroundColor = Color(0xFFE3F7E9),
-                        contentColor = Color(0xFF1E9E4A)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    MetricProgressRow(
+                        label = "Till Date Target",
+                        percent = data.tillDateTargetPercent,
+                        progressColor = Color(0xFFFF4D6D)
                     )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Bottom pill badges
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        GrowthPill(
+                            label = "MTD",
+                            percent = data.mtdGrowthPercent,
+                            isPositive = true,
+                            backgroundColor = Color(0xFFE3F7E9),
+                            contentColor = Color(0xFF1E9E4A)
+                        )
+                        GrowthPill(
+                            label = "YTD",
+                            percent = data.ytdGrowthPercent,
+                            isPositive = data.ytdGrowthIsPositive,
+                            backgroundColor = Color(0xFFFFF9DB),
+                            contentColor = Color(0xFF9E7C1E)
+                        )
+                        GrowthPill(
+                            label = "M2M",
+                            percent = data.m2mGrowthPercent,
+                            isPositive = true,
+                            backgroundColor = Color(0xFFE3F7E9),
+                            contentColor = Color(0xFF1E9E4A)
+                        )
+                    }
                 }
             }
         }
@@ -896,6 +1055,121 @@ private fun GrowthPill(
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             color = contentColor
+        )
+    }
+}
+
+@Composable
+fun StockStatusSection(
+    onArrowClick: () -> Unit = {}
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 12.dp, top = 28.dp, bottom = 24.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Stock Status",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF2D1B69)
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            SectionArrowButton(
+                contentDescription = "Open Stock Status",
+                onClick = onArrowClick
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Dummy data — replace with API-driven values later.
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StockStatusCard(
+                icon = Res.drawable.ic_icon_truck,
+                title = "Transit Invoices",
+                pendingCount = 4,
+                distributorCount = 4,
+                modifier = Modifier.weight(1f)
+            )
+            StockStatusCard(
+                icon = Res.drawable.ic_icon_box,
+                title = "Indent",
+                pendingCount = 3,
+                distributorCount = 3,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+/** Circular arrow button for section headers — same look as the TopBar back button. */
+@Composable
+private fun SectionArrowButton(
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            painter = painterResource(Res.drawable.ic_icon_next),
+            contentDescription = contentDescription,
+            tint = Color(0xFF2D1B69),
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+@Composable
+private fun StockStatusCard(
+    icon: DrawableResource,
+    title: String,
+    pendingCount: Int,
+    distributorCount: Int,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFFFFFDD2))
+            .padding(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                tint = Color(0xFF3A3A3A),
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = "Pending $pendingCount",
+                fontSize = 12.sp,
+                color = Color(0xFFF7931E)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = title,
+            fontSize = 18.sp,
+            color = Color.Black,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "$distributorCount Distributor",
+            fontSize = 12.sp,
+            color = Color.Black
         )
     }
 }

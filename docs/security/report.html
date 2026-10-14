@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ManagerApp Security Report</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; line-height: 1.45; color: #1f2430; margin: 0; }
+  h1 { font-size: 26pt; margin: 0 0 6px; color: #1f1059; }
+  h2 { font-size: 15pt; color: #1f1059; border-bottom: 2px solid #582fff; padding-bottom: 4px; margin: 22px 0 10px; }
+  h3 { font-size: 12pt; margin: 0 0 6px; color: #111827; }
+  p { margin: 4px 0 8px; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background: #f1eefe; padding: 0 3px; border-radius: 3px; }
+  pre { font-family: Consolas, "Courier New", monospace; font-size: 8.6pt; background: #0f172a; color: #e2e8f0; padding: 9px 11px; border-radius: 6px; white-space: pre-wrap; word-break: break-word; margin: 6px 0 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 9.6pt; }
+  th, td { border: 1px solid #e5e7eb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #f3f1ff; color: #1f1059; }
+  .cover { height: 245mm; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }
+  .cover .tag { color: #582fff; font-weight: 600; letter-spacing: 1px; font-size: 10pt; text-transform: uppercase; }
+  .cover .sub { font-size: 13pt; color: #4b5563; margin-bottom: 26px; }
+  .meta td { border: none; padding: 3px 12px 3px 0; font-size: 10.5pt; }
+  .meta td:first-child { color: #6b7280; width: 120px; }
+  .finding { border: 1px solid #e5e7eb; border-left: 5px solid #999; border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; page-break-inside: avoid; }
+  .finding.high { border-left-color: #dc2626; }
+  .finding.medium { border-left-color: #ea8a0c; }
+  .finding.low { border-left-color: #2563eb; }
+  .sev { display: inline-block; font-size: 8.5pt; font-weight: 700; padding: 1px 8px; border-radius: 10px; color: #fff; margin-right: 6px; vertical-align: middle; }
+  .sev.high { background: #dc2626; } .sev.medium { background: #ea8a0c; } .sev.low { background: #2563eb; }
+  .label { font-weight: 600; color: #374151; }
+  .summary-box { display: flex; gap: 10px; margin: 10px 0 14px; }
+  .summary-box div { flex: 1; border-radius: 8px; padding: 10px; text-align: center; color: #fff; }
+  .summary-box b { display: block; font-size: 22pt; }
+  .page-break { page-break-before: always; }
+  ul { margin: 4px 0 8px 18px; padding: 0; }
+  li { margin: 2px 0; }
+  .note { background: #fff8e6; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 10px; font-size: 9.6pt; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="cover">
+  <div class="tag">Security Assessment</div>
+  <h1>ManagerApp</h1>
+  <div class="sub">Mobile application security review &amp; remediation plan<br>Compose Multiplatform (Android + iOS)</div>
+  <table class="meta">
+    <tr><td>Date</td><td>5 October 2026</td></tr>
+    <tr><td>Repository</td><td>ManagerApp (branch <code>login</code>)</td></tr>
+    <tr><td>Scope</td><td>Client app source: <code>composeApp</code> (commonMain / androidMain / iosMain), <code>iosApp</code>, Gradle build files, <code>docs/</code></td></tr>
+    <tr><td>Method</td><td>Static source review (manual). No dynamic testing, no server-side testing.</td></tr>
+    <tr><td>Result</td><td>2 High · 7 Medium · 8 Low / hardening findings</td></tr>
+  </table>
+</section>
+
+<!-- ============ EXECUTIVE SUMMARY ============ -->
+<h2>1. Executive summary</h2>
+<p>The app's code structure is clean and avoids several common mistakes: no API keys or secrets are committed, tokens are never written to disk, and the Android attack surface is small. The most serious risk is <b>transport security</b>. Every request, <b>including the login password and the bearer access token</b>, goes over plain HTTP to a bare IP address, and both platforms have explicit exceptions that allow this. Anyone on the same network (public Wi-Fi, a compromised router, the mobile carrier path) can read or change this traffic.</p>
+<p>The second High finding concerns the <b>AI Sales Report</b> calls. They send no Authorization header and pass the user's identity as a client-controlled <code>UserID</code> parameter. Unless the server checks this independently, one user can read another user's report history (an insecure direct object reference, or IDOR).</p>
+
+<div class="summary-box">
+  <div style="background:#dc2626"><b>2</b>High</div>
+  <div style="background:#ea8a0c"><b>7</b>Medium</div>
+  <div style="background:#2563eb"><b>8</b>Low / hardening</div>
+</div>
+
+<table>
+  <tr><th style="width:34px">#</th><th>Finding</th><th style="width:70px">Severity</th><th style="width:90px">Effort</th></tr>
+  <tr><td>H1</td><td>All API traffic (credentials, tokens, business data) sent over cleartext HTTP</td><td>High</td><td>Server + small app change</td></tr>
+  <tr><td>H2</td><td>AI Sales Report endpoints unauthenticated; user identity taken from client-supplied <code>UserID</code></td><td>High</td><td>Server + small app change</td></tr>
+  <tr><td>M1</td><td>HTTP logging enabled in release builds</td><td>Medium</td><td>Small</td></tr>
+  <tr><td>M2</td><td>Release build not minified or obfuscated (R8 disabled)</td><td>Medium</td><td>Small–Medium</td></tr>
+  <tr><td>M3</td><td><code>android:allowBackup="true"</code></td><td>Medium</td><td>Small</td></tr>
+  <tr><td>M4</td><td>Incomplete session handling: 401 not validated, tokens never cleared, refresh token unused</td><td>Medium</td><td>Medium</td></tr>
+  <tr><td>M5</td><td>Geofence attendance enforced only on the client, fails open, no mock-location detection</td><td>Medium</td><td>Medium</td></tr>
+  <tr><td>M6</td><td>No certificate pinning (applies once HTTPS is enabled)</td><td>Medium</td><td>Small</td></tr>
+  <tr><td>M7</td><td>Planned token persistence must use Keystore / Keychain</td><td>Medium</td><td>Medium</td></tr>
+  <tr><td>L1</td><td>Password kept in <code>LoginUiState</code> after successful login</td><td>Low</td><td>Trivial</td></tr>
+  <tr><td>L2</td><td>No screenshot / app-switcher protection on sensitive screens</td><td>Low</td><td>Small</td></tr>
+  <tr><td>L3</td><td>Exported AI-report PDF/CSV files are unencrypted</td><td>Low</td><td>Policy</td></tr>
+  <tr><td>L4</td><td>Leftover debug <code>println</code></td><td>Low</td><td>Trivial</td></tr>
+  <tr><td>L5</td><td>API docs page exposes internal IP, stores userId in localStorage, loads unpinned CDN scripts</td><td>Low</td><td>Small</td></tr>
+  <tr><td>L6</td><td>Lenient JSON parsing (<code>isLenient = true</code>)</td><td>Low</td><td>Trivial</td></tr>
+  <tr><td>L7</td><td>No automated dependency vulnerability scanning; several libraries behind latest</td><td>Low</td><td>Small</td></tr>
+  <tr><td>L8</td><td>Device identifier and location collection need privacy disclosure</td><td>Low</td><td>Policy</td></tr>
+</table>
+
+<!-- ============ HIGH ============ -->
+<h2 class="page-break">2. High severity findings</h2>
+
+<div class="finding high">
+  <h3><span class="sev high">HIGH</span>H1 · All API traffic is sent over cleartext HTTP</h3>
+  <p><span class="label">Evidence</span></p>
+  <ul>
+    <li><code>composeApp/src/commonMain/.../core/network/NetworkConstants.kt:4</code>: <code>BASE_URL = "http://210.4.65.222/SupervisorApp/api/v1/"</code></li>
+    <li><code>composeApp/src/androidMain/res/xml/network_security_config.xml:3</code>: <code>cleartextTrafficPermitted="true"</code> for <code>210.4.65.222</code></li>
+    <li><code>iosApp/iosApp/Info.plist:15</code>: ATS exception <code>NSExceptionAllowsInsecureHTTPLoads</code> for the same IP</li>
+  </ul>
+  <p><span class="label">Risk.</span> <code>POST auth/login</code> sends the login ID and password in plain text, and every later request carries the bearer access token in plain text. An attacker on the network path can capture credentials and tokens, take over sessions, read sales, attendance and distributor data, and change responses (for example, inject false geofence configuration).</p>
+  <p><span class="label">Recommendation</span></p>
+  <ul>
+    <li>Serve the API over <b>HTTPS (TLS 1.2+)</b> on a DNS hostname with a valid CA-issued certificate (for example, Let's Encrypt). Certificates for bare IP addresses are impractical.</li>
+    <li>Remove the Android cleartext exception and the iOS ATS exception.</li>
+    <li>Configure the base URL per build type so test and production endpoints never get mixed up.</li>
+  </ul>
+<pre>&lt;!-- network_security_config.xml --&gt;
+&lt;network-security-config&gt;
+    &lt;base-config cleartextTrafficPermitted="false" /&gt;
+&lt;/network-security-config&gt;
+
+// NetworkConstants.kt
+const val BASE_URL = "https://api.yourdomain.com/SupervisorApp/api/v1/"</pre>
+  <p>On iOS, delete the whole <code>NSAppTransportSecurity</code> block from <code>Info.plist</code>.</p>
+</div>
+
+<div class="finding high">
+  <h3><span class="sev high">HIGH</span>H2 · AI Sales Report endpoints are unauthenticated and trust a client-supplied UserID</h3>
+  <p><span class="label">Evidence</span></p>
+  <ul>
+    <li><code>data/remote/aiSalesReport/AISalesReportRemoteDataSource.kt:17-35</code>: <code>AskOpenAI</code>, <code>AskOpenAIForSummary</code>, <code>GetCurrentUserAllQueryLog</code> and <code>GetAIFAQs</code> are called <b>without</b> <code>bearerAuth(...)</code>. All other data sources attach the token.</li>
+    <li>The user's identity is sent as <code>UserID</code> (query parameter at lines 28 and 35; request body in <code>AIReportRequestDto</code> and <code>AISummaryRequestDto</code>).</li>
+    <li>A similar pattern exists in <code>AttendanceRemoteDataSource.kt:33, 41, 73</code> (<code>userId</code> parameter), although those calls do send the token.</li>
+  </ul>
+  <p><span class="label">Risk.</span> If the server uses the <code>UserID</code> it receives, anyone (even without logging in, for the AI endpoints) can change the ID and read another user's prompt history, FAQs and AI-generated sales summaries, or run queries under someone else's identity and data scope. This is an insecure direct object reference (IDOR), and it also lets anyone consume the paid LLM API.</p>
+  <p><span class="label">Recommendation</span></p>
+  <ul>
+    <li>Server: require a valid bearer token on every endpoint, and <b>derive the user from the token</b>. Ignore client-supplied user IDs, or reject them when they don't match the token. This is how <code>/attendance/team-summary</code> already works.</li>
+    <li>Server: add per-user rate limits on the LLM endpoints.</li>
+    <li>App: attach the token in the AI data source, or better, attach it once for all calls (see M4).</li>
+  </ul>
+<pre>suspend fun askAI(request: AIReportRequestDto): AIReportResponseDto =
+    httpClient.post("AIReportGenerator/AskOpenAI") {
+        bearerAuth(tokenStorage.getTokens()?.accessToken ?: "")
+        setBody(request)
+    }.body()</pre>
+  <div class="note">Confirm the server-side behaviour. If the server already checks <code>UserID</code> against an authenticated session by some other means, this drops to Medium. Even then, leaving the endpoints unauthenticated is still a problem.</div>
+</div>
+
+<!-- ============ MEDIUM ============ -->
+<h2 class="page-break">3. Medium severity findings</h2>
+
+<div class="finding medium">
+  <h3><span class="sev medium">MEDIUM</span>M1 · HTTP logging is enabled in release builds</h3>
+  <p><span class="label">Evidence.</span> <code>core/network/HttpClientFactory.kt:21-23</code> installs Ktor <code>Logging</code> at <code>LogLevel.INFO</code> unconditionally.</p>
+  <p><span class="label">Risk.</span> Request URLs, including user-ID query parameters, are written to the system log in production. Raising the level to HEADERS or BODY while debugging would also log bearer tokens and passwords, and that change could easily ship.</p>
+  <p><span class="label">Recommendation.</span> Install logging only in debug builds, and always sanitize the Authorization header.</p>
+<pre>if (isDebugBuild) {
+    install(Logging) {
+        level = LogLevel.HEADERS
+        sanitizeHeader { it == HttpHeaders.Authorization }
+    }
+}</pre>
+  <p>Provide <code>isDebugBuild</code> through a small <code>expect/actual</code> (<code>BuildConfig.DEBUG</code> on Android, <code>Platform.isDebugBinary</code> on iOS) or a Koin property.</p>
+</div>
+
+<div class="finding medium">
+  <h3><span class="sev medium">MEDIUM</span>M2 · Release build is not minified or obfuscated</h3>
+  <p><span class="label">Evidence.</span> <code>composeApp/build.gradle.kts:88</code>: <code>isMinifyEnabled = false</code>. Resource shrinking is also off, and there is no release signing configuration in the build file.</p>
+  <p><span class="label">Risk.</span> The APK keeps full class and method names, so reverse-engineering the API contract, business rules (such as the geofence logic) and endpoint paths is trivial. That makes tampering and repackaging easier.</p>
+  <p><span class="label">Recommendation</span></p>
+<pre>getByName("release") {
+    isMinifyEnabled = true
+    isShrinkResources = true
+    proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+}</pre>
+  <p>Add keep rules for kotlinx-serialization (<code>@Serializable</code> classes and their <code>$serializer</code>), Ktor and Koin, then run a regression test on a release build. Keep the signing keys outside the repository (CI secrets or <code>local.properties</code>).</p>
+</div>
+
+<div class="finding medium">
+  <h3><span class="sev medium">MEDIUM</span>M3 · Application data can be extracted through backup</h3>
+  <p><span class="label">Evidence.</span> <code>composeApp/src/androidMain/AndroidManifest.xml:10</code>: <code>android:allowBackup="true"</code>.</p>
+  <p><span class="label">Risk.</span> SharedPreferences (login ID today, and tokens once M7 is done) can be copied by <code>adb backup</code> on older devices, or included in cloud backups and restored onto another device.</p>
+  <p><span class="label">Recommendation</span></p>
+<pre>&lt;application
+    android:allowBackup="false"
+    android:dataExtractionRules="@xml/data_extraction_rules"
+    android:fullBackupContent="false" ... &gt;</pre>
+  <p>If backup is needed, exclude credential stores explicitly with <code>&lt;exclude domain="sharedpref" path="..."/&gt;</code>.</p>
+</div>
+
+<div class="finding medium">
+  <h3><span class="sev medium">MEDIUM</span>M4 · Session handling gaps (401 detection, token clearing, refresh)</h3>
+  <p><span class="label">Evidence</span></p>
+  <ul>
+    <li><code>HttpClientFactory.kt</code> sets neither <code>expectSuccess = true</code> nor an <code>HttpResponseValidator</code>, so <code>SafeApiCall.kt:68</code> (<code>is ClientRequestException</code>) never triggers. A 401 response surfaces as a deserialization or business error, not as <code>AppError.Unauthorized</code>.</li>
+    <li><code>TokenStorage.clearTokens()</code> and <code>UserSession.clearUser()</code> are never called. "Session expired" navigates to Login but leaves the old token in memory.</li>
+    <li>The refresh token is parsed and stored but never used.</li>
+    <li>Each data source attaches the token by hand, which is how H2 happened.</li>
+  </ul>
+  <p><span class="label">Risk.</span> Expired or revoked sessions may not be detected reliably. The previous user's token stays usable inside the process after logout or expiry. Manual per-call auth makes it easy to miss a call.</p>
+  <p><span class="label">Recommendation.</span> Centralise authentication with Ktor's <code>Auth</code> plugin.</p>
+<pre>install(Auth) {
+    bearer {
+        loadTokens { tokenStorage.getTokens()?.let { BearerTokens(it.accessToken, it.refreshToken) } }
+        refreshTokens { /* call refresh endpoint; on failure clear storage + emit logout */ }
+        sendWithoutRequest { request -&gt; !request.url.encodedPath.endsWith("auth/login") }
+    }
+}
+expectSuccess = true  // so 4xx/5xx reach SafeApiCall's ClientRequestException branch</pre>
+  <p>Call <code>tokenStorage.clearTokens()</code> and <code>userSession.clearUser()</code> on logout and on any unrecoverable 401. Then remove the per-call <code>authorize(token)</code> helpers.</p>
+</div>
+
+<div class="finding medium">
+  <h3><span class="sev medium">MEDIUM</span>M5 · Geofence attendance can be bypassed</h3>
+  <p><span class="label">Evidence.</span> <code>domain/usecase/attendance/CheckGeofenceUseCase.kt:33-39</code> decides on the device whether the user is inside the distributor radius. It returns <code>Allowed</code> whenever the distributor location, config or radius is missing. No mock-location check is done in <code>AndroidLocationProvider</code> or <code>IosLocationProvider</code>.</p>
+  <p><span class="label">Risk.</span> A fake-GPS app, a rooted or jailbroken device, or a modified APK can mark attendance from anywhere. Because the check fails open, any gap in configuration silently disables it.</p>
+  <p><span class="label">Recommendation</span></p>
+  <ul>
+    <li>Repeat the distance check on the <b>server</b> in <code>attendance/save-attendance</code> using the submitted coordinates. The client check is for UX only.</li>
+    <li>Reject or flag mock locations on Android: <code>location.isMock</code> (API 31+), or <code>location.isFromMockProvider</code> (older). Send a <code>isMockLocation</code> flag with the attendance request.</li>
+    <li>For stronger assurance, add Play Integrity (Android) or App Attest (iOS) tokens to attendance submissions.</li>
+    <li>Decide explicitly whether missing configuration should block check-in or be logged for review, rather than allowing it silently.</li>
+  </ul>
+</div>
+
+<div class="finding medium">
+  <h3><span class="sev medium">MEDIUM</span>M6 · No certificate pinning</h3>
+  <p><span class="label">Evidence.</span> The OkHttp engine (<code>PlatformModule.android.kt</code>) and the Darwin engine (<code>PlatformModule.ios.kt</code>) are created without pinning.</p>
+  <p><span class="label">Risk.</span> Once HTTPS is in place (H1), a user-installed or corporate CA could still intercept traffic. This matters most for a field-sales app used on unmanaged devices.</p>
+  <p><span class="label">Recommendation.</span> Pin the server's public key, and include a backup pin so certificates can rotate.</p>
+<pre>OkHttp.create {
+    config {
+        certificatePinner(
+            CertificatePinner.Builder()
+                .add("api.yourdomain.com", "sha256/PRIMARY_PIN=", "sha256/BACKUP_PIN=")
+                .build()
+        )
+    }
+}</pre>
+  <p>On iOS, use <code>Darwin.create { handleChallenge { ... } }</code> to compare the server's public-key hash.</p>
+</div>
+
+<div class="finding medium">
+  <h3><span class="sev medium">MEDIUM</span>M7 · Planned token persistence must use secure storage</h3>
+  <p><span class="label">Evidence.</span> <code>InMemoryTokenStorage.kt</code> and <code>InMemoryUserSession.kt</code> are documented placeholders that will later be replaced with persistent storage ("SQLDelight/secure-storage"). The login ID is already stored in plain <code>SharedPreferences</code> (<code>AndroidLoginPreferences.kt:9</code>) and <code>NSUserDefaults</code>.</p>
+  <p><span class="label">Risk.</span> Storing access or refresh tokens in SharedPreferences, NSUserDefaults or an unencrypted SQLDelight database would expose them to backup extraction (M3), rooted devices and forensic tools.</p>
+  <p><span class="label">Recommendation.</span> Implement <code>TokenStorage</code> with Android Keystore-backed encryption (for example, encrypting a DataStore value with a Keystore AES-GCM key), and with the <b>iOS Keychain</b> (<code>kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly</code>). Provide both through the platform Koin modules, as the project conventions require. Never put tokens in the SQLDelight database.</p>
+</div>
+
+<!-- ============ LOW ============ -->
+<h2 class="page-break">4. Low severity / hardening</h2>
+
+<div class="finding low">
+  <h3><span class="sev low">LOW</span>L1 · Password kept in UI state after login</h3>
+  <p><code>LoginViewModel.kt:57-65</code>: <code>LoginUiState.password</code> is never cleared after a successful login. The ViewModel is activity-scoped, so the plaintext password stays in memory for the whole session. <b>Fix:</b> <code>_uiState.update { it.copy(password = "") }</code> before <code>NavigateToHome</code>.</p>
+</div>
+
+<div class="finding low">
+  <h3><span class="sev low">LOW</span>L2 · No screenshot / recent-apps protection</h3>
+  <p>Sales figures, team data and the login screen can be captured by screenshots, screen recorders and the recent-apps thumbnail. <b>Fix:</b> on Android, set <code>window.setFlags(FLAG_SECURE, FLAG_SECURE)</code> in <code>MainActivity</code> (or only on sensitive routes). On iOS, add a blur or overlay view in <code>sceneWillResignActive</code>.</p>
+</div>
+
+<div class="finding low">
+  <h3><span class="sev low">LOW</span>L3 · Exported reports are unencrypted</h3>
+  <p>AI Sales Report PDF and CSV exports (FileKit) are saved wherever the user chooses, without protection. That's acceptable for a user-initiated export, but confirm it with the business and consider a watermark ("Confidential · user · date") on PDFs.</p>
+</div>
+
+<div class="finding low">
+  <h3><span class="sev low">LOW</span>L4 · Leftover debug output</h3>
+  <p><code>navigation/AppNavigation.kt:65</code>: <code>println("Login page")</code>. Remove it, and route any future logging through a debug-only logger.</p>
+</div>
+
+<div class="finding low">
+  <h3><span class="sev low">LOW</span>L5 · API documentation page</h3>
+  <p><code>docs/index.html</code>:</p>
+  <ul>
+    <li>Calls the test server over HTTP.</li>
+    <li>Saves the logged-in <code>userId</code> to <code>localStorage</code> (line 38).</li>
+    <li>Loads Swagger UI from <code>unpkg.com</code> with a floating <code>@5</code> version and no Subresource Integrity (lines 6, 23, 24).</li>
+  </ul>
+  <p>Together with <code>docs/openapi.yaml</code>, it reveals the internal IP and the full API surface.</p>
+  <p><b>Fix:</b></p>
+  <ul>
+    <li>Keep the docs off public hosting.</li>
+    <li>Pin an exact Swagger UI version and add <code>integrity</code> / <code>crossorigin</code> attributes.</li>
+    <li>Use <code>sessionStorage</code>, and point the docs at the HTTPS host once H1 is fixed.</li>
+  </ul>
+</div>
+
+<div class="finding low">
+  <h3><span class="sev low">LOW</span>L6 · Lenient JSON parsing</h3>
+  <p><code>core/di/NetworkModule.kt:12</code>: <code>isLenient = true</code> accepts malformed JSON such as unquoted keys. Keep <code>ignoreUnknownKeys</code>, but turn off <code>isLenient</code> unless the server really sends non-standard JSON.</p>
+</div>
+
+<div class="finding low">
+  <h3><span class="sev low">LOW</span>L7 · Dependency hygiene</h3>
+  <p><code>gradle/libs.versions.toml</code> pins Ktor 3.0.3, Koin 4.0.2 and kotlinx-serialization 1.7.3, which are behind current releases. No automated vulnerability scanning was found. (No specific CVE was checked as part of this review.)</p>
+  <p><b>Fix:</b> enable Renovate or Dependabot on <code>libs.versions.toml</code>, add the OWASP Dependency-Check Gradle plugin (or GitHub dependency review) to CI, and update Ktor and OkHttp regularly, since they handle all network input.</p>
+</div>
+
+<div class="finding low">
+  <h3><span class="sev low">LOW</span>L8 · Privacy disclosure</h3>
+  <p>Login and attendance send <code>ANDROID_ID</code> (<code>AndroidDeviceInfoProvider.kt:10</code>), the OS version and the precise location. Make sure the privacy policy, the Google Play Data Safety form and the iOS privacy manifest declare these, and collect location only when marking attendance (the current behaviour).</p>
+</div>
+
+<!-- ============ POSITIVES / ROADMAP ============ -->
+<h2 class="page-break">5. What is already done well</h2>
+<ul>
+  <li>No hardcoded API keys, secrets or credentials in the source or build files. <code>local.properties</code> is git-ignored.</li>
+  <li>Access and refresh tokens are kept only in memory and never written to disk.</li>
+  <li>Small Android attack surface: only the launcher <code>MainActivity</code> is exported, and only the INTERNET and LOCATION permissions are requested.</li>
+  <li>Cleartext exceptions are limited to one host (<code>includeSubdomains="false"</code>) rather than enabled globally.</li>
+  <li>The password field is masked by default. Errors are mapped to user-friendly messages, so stack traces don't leak to the UI.</li>
+  <li>A single, consistent error-handling path (<code>safeApiCall</code> → <code>AppError</code>) makes the central fixes for M4 easy to apply.</li>
+</ul>
+
+<h2>6. Remediation roadmap</h2>
+<table>
+  <tr><th style="width:110px">When</th><th>Actions</th></tr>
+  <tr><td><b>Now</b><br>(before production)</td><td>
+    H1: HTTPS on a hostname, remove the cleartext / ATS exceptions.<br>
+    H2: authenticate the AI endpoints and derive the user from the token on the server.<br>
+    M1: logging in debug builds only.<br>
+    M3: <code>allowBackup="false"</code>.<br>
+    L1, L4: quick code fixes.</td></tr>
+  <tr><td><b>Next sprint</b></td><td>
+    M4: Ktor <code>Auth</code> bearer plugin + <code>expectSuccess</code> + token clearing on logout / 401.<br>
+    M2: R8 with keep rules; test the release build.<br>
+    M5: server-side geofence validation and mock-location rejection.<br>
+    M6: certificate pinning, once HTTPS is live.</td></tr>
+  <tr><td><b>Later</b></td><td>
+    M7: Keystore / Keychain <code>TokenStorage</code> when persistent login is added.<br>
+    L2: FLAG_SECURE / snapshot blur.<br>
+    L5–L8: docs hardening, dependency scanning in CI, privacy declarations, export watermarking.<br>
+    Consider Play Integrity / App Attest for attendance.</td></tr>
+</table>
+
+<h2>7. Method and limitations</h2>
+<ul>
+  <li>Manual static review of the whole client repository: Kotlin sources in every source set, the Android manifest and resources, iOS <code>Info.plist</code> and xcconfig, Gradle build and version catalog, and <code>docs/</code>.</li>
+  <li>Not covered: the backend (<code>210.4.65.222</code>), dynamic or runtime testing, binary analysis of a release APK or IPA, and third-party library CVE lookup.</li>
+  <li>The iOS target could not be built on the review machine (Windows), so iOS findings come from source review only.</li>
+  <li>Several findings (H2, M5) depend on server behaviour and should be confirmed with the backend team.</li>
+</ul>
+
+</body>
+</html>

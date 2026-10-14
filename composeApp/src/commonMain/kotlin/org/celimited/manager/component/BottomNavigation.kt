@@ -1,19 +1,11 @@
 package org.celimited.manager.component
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -24,13 +16,26 @@ import manager.composeapp.generated.resources.ic_icon_home
 import manager.composeapp.generated.resources.ic_icon_menu
 import manager.composeapp.generated.resources.ic_icon_order_status
 import manager.composeapp.generated.resources.ic_icon_retail_visit
-import org.celimited.manager.navigation.Screen
+import org.celimited.manager.core.common.Feature
 import org.jetbrains.compose.resources.painterResource
+
+/** Tab order; a null feature (Home) is always available. */
+private val tabFeatures = listOf(
+    Feature.Approvals,
+    Feature.OrderStatus,
+    null,
+    Feature.RetailVisit,
+    Feature.Menu
+)
+
+/** True if the tab at [index] is not built yet and shouldn't be opened. */
+fun isBottomTabLocked(index: Int): Boolean = tabFeatures.getOrNull(index)?.isLocked == true
 
 @Composable
 fun BottomNavigation(
     selectedIndex: Int,
-    onItemSelected: (Int) -> Unit
+    onItemSelected: (Int) -> Unit,
+    onLockedItemClick: () -> Unit
 ) {
 
     val items = listOf(
@@ -46,11 +51,16 @@ fun BottomNavigation(
         items.forEachIndexed { index, label ->
 
             val isSelected = selectedIndex == index
-            val tintColor = if (isSelected) Color(0xFF582FFF) else Color.Gray
+            val isLocked = isBottomTabLocked(index)
+            val tintColor = when {
+                isSelected -> Color(0xFF582FFF)
+                isLocked -> Color.Gray.copy(alpha = LockedAlpha)
+                else -> Color.Gray
+            }
 
             NavigationBarItem(
                 selected = isSelected,
-                onClick = { onItemSelected(index) },
+                onClick = { if (isLocked) onLockedItemClick() else onItemSelected(index) },
                 icon = {
                     Icon(
                         painter = painterResource(

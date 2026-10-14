@@ -9,6 +9,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.io.IOException
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.celimited.manager.core.common.AppError
@@ -20,6 +21,25 @@ suspend fun <T> safeApiCall(block: suspend () -> ApiEnvelope<T>): DataResult<T> 
         val data = envelope.data
         if (envelope.success && data != null) {
             DataResult.Success(data)
+        } else {
+            DataResult.Error(AppError.Business(envelope.message ?: "Request failed"))
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        DataResult.Error(e.toAppError())
+    }
+}
+
+/**
+ * Like [safeApiCall], but for action endpoints whose envelope carries no `data` —
+ * success is decided by the `success` flag alone and the API's message is returned.
+ */
+suspend fun safeApiCallNoData(block: suspend () -> ApiEnvelope<JsonElement>): DataResult<String> {
+    return try {
+        val envelope = block()
+        if (envelope.success) {
+            DataResult.Success(envelope.message.orEmpty())
         } else {
             DataResult.Error(AppError.Business(envelope.message ?: "Request failed"))
         }

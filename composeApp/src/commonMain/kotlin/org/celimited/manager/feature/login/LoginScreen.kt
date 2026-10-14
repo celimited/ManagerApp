@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.celimited.manager.component.CornerRoundTextField
+import org.celimited.manager.component.ErrorDialog
 import org.celimited.manager.component.LoadingOverlay
 import org.celimited.manager.component.PrimaryButton
 import manager.composeapp.generated.resources.Res
@@ -87,6 +88,10 @@ fun LoginRoute(
             onLoginClicked = viewModel::onLoginClicked,
             onForgotPasswordClick = onForgotPasswordClick
         )
+    }
+
+    uiState.errorDialog?.let { error ->
+        ErrorDialog(message = error.message, onClose = viewModel::onDismissError)
     }
 }
 

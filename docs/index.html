@@ -8,18 +8,123 @@
         html { box-sizing: border-box; overflow-y: scroll; }
         *, *:before, *:after { box-sizing: inherit; }
         body { margin: 0; background: #fafafa; }
+        #session-bar {
+            position: sticky; top: 0; z-index: 10;
+            padding: 8px 16px; font: 14px sans-serif;
+            background: #fff3cd; color: #664d03; border-bottom: 1px solid #ffe69c;
+        }
+        #session-bar.logged-in { background: #d1e7dd; color: #0f5132; border-bottom-color: #a3cfbb; }
+        #session-bar button { margin-left: 12px; cursor: pointer; }
     </style>
 </head>
 <body>
+<div id="session-bar"></div>
 <div id="swagger-ui"></div>
 <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
 <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
 <script>
+    // Calling POST /auth/login captures the access token and userId from its response. The token is
+    // put into the BearerAuth scheme (so every secured endpoint sends it) and the userId replaces any
+    // `userId` / `UserID` query parameter or top-level JSON body field on later requests.
+    var USER_ID_KEY = 'managerApp.userId';
+    var USER_ID_FIELDS = ['userId', 'UserID'];
+
+    function readUserId() {
+      try { return localStorage.getItem(USER_ID_KEY); } catch (e) { return null; }
+    }
+
+    function writeUserId(value) {
+      try {
+        if (value) localStorage.setItem(USER_ID_KEY, value);
+        else localStorage.removeItem(USER_ID_KEY);
+      } catch (e) { /* storage blocked — the id just won't survive a reload */ }
+    }
+
+    var currentUserId = readUserId();
+
+    function renderSessionBar() {
+      var bar = document.getElementById('session-bar');
+      bar.textContent = '';
+      if (currentUserId) {
+        bar.className = 'logged-in';
+        bar.appendChild(document.createTextNode('Logged in · userId ' + currentUserId +
+          ' — token and userId are sent automatically.'));
+        var logout = document.createElement('button');
+        logout.textContent = 'Log out';
+        logout.onclick = logOut;
+        bar.appendChild(logout);
+      } else {
+        bar.className = '';
+        bar.textContent = 'Not logged in — run POST /auth/login first; its token and userId are then used for every other API.';
+      }
+    }
+
+    function logOut() {
+      currentUserId = null;
+      writeUserId(null);
+      window.ui.authActions.logoutWithPersistOption(['BearerAuth']);
+      renderSessionBar();
+    }
+
+    function isLoginUrl(url) {
+      return /\/auth\/login(\?|$)/.test(url);
+    }
+
+    function applyUserId(req) {
+      if (!currentUserId || isLoginUrl(req.url)) return req;
+
+      // Also called for the spec fetch itself, whose URL may be relative.
+      var url = new URL(req.url, window.location.href);
+      USER_ID_FIELDS.forEach(function (name) {
+        if (url.searchParams.has(name)) url.searchParams.set(name, currentUserId);
+      });
+      req.url = url.toString();
+
+      if (typeof req.body === 'string' && req.body.trim().charAt(0) === '{') {
+        try {
+          var body = JSON.parse(req.body);
+          var changed = false;
+          USER_ID_FIELDS.forEach(function (name) {
+            if (Object.prototype.hasOwnProperty.call(body, name)) {
+              body[name] = currentUserId;
+              changed = true;
+            }
+          });
+          if (changed) req.body = JSON.stringify(body);
+        } catch (e) { /* not JSON — leave as typed */ }
+      }
+      return req;
+    }
+
+    function captureLogin(res) {
+      if (!res.ok || !isLoginUrl(res.url)) return res;
+
+      var body = res.body;
+      if (!body || typeof body !== 'object') {
+        try { body = JSON.parse(res.text); } catch (e) { return res; }
+      }
+      var data = body && body.data;
+      var token = data && data.tokens && data.tokens.accessToken;
+      var userId = data && data.user && data.user.userId;
+
+      if (token) window.ui.preauthorizeApiKey('BearerAuth', token);
+      if (userId) {
+        currentUserId = String(userId);
+        writeUserId(currentUserId);
+      }
+      renderSessionBar();
+      return res;
+    }
+
     window.onload = function() {
+      renderSessionBar();
       window.ui = SwaggerUIBundle({
         url: "./openapi.yaml",
         dom_id: '#swagger-ui',
         deepLinking: true,
+        persistAuthorization: true,
+        requestInterceptor: applyUserId,
+        responseInterceptor: captureLogin,
         presets: [
           SwaggerUIBundle.presets.apis,
           SwaggerUIStandalonePreset
