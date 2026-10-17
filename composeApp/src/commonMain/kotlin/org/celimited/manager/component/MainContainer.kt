@@ -26,7 +26,8 @@ fun MainContainer(
     onAISalesReportClick: () -> Unit,
     onAttendanceCardClick: () -> Unit,
     onTodayStatsClick: () -> Unit,
-    onStockStatusClick: () -> Unit
+    onStockStatusClick: () -> Unit,
+    onLogout: () -> Unit
 ) {
 
     var selectedTab by rememberSaveable { mutableStateOf(2) }
@@ -57,7 +58,8 @@ fun MainContainer(
                     onAttendanceCardClick = onAttendanceCardClick,
                     onTodayStatsClick = onTodayStatsClick,
                     onStockStatusClick = onStockStatusClick,
-                    onFeatureLocked = showUnderDevelopment
+                    onFeatureLocked = showUnderDevelopment,
+                    onLogout = onLogout
                 )
                 3 -> RetailVisitRoute()
                 4 -> MenuRoute()

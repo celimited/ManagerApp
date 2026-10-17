@@ -147,6 +147,8 @@ class AttendanceRepositoryImpl(
 
     override fun consumeAutoPopup(): Boolean = localDataSource.consumeAutoPopup()
 
+    override fun clearSessionCache() = localDataSource.clear()
+
     private inline fun <T, R> DataResult<T>.map(transform: (T) -> R): DataResult<R> = when (this) {
         is DataResult.Success -> DataResult.Success(transform(data))
         is DataResult.Error -> this

@@ -40,4 +40,9 @@ class AuthRepositoryImpl(
         }
         return DataResult.Error((result as DataResult.Error).error)
     }
+
+    override suspend fun logout() {
+        tokenStorage.clearTokens()
+        userSession.clearUser()
+    }
 }

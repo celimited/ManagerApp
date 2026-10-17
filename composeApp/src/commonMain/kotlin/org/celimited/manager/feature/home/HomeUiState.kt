@@ -13,7 +13,8 @@ data class HomeUiState(
     val attendancePopup: AttendancePopupUi = AttendancePopupUi.None,
     val attendanceCard: AttendanceCardUi = AttendanceCardUi.Unknown,
     /** API failure popup; null when no dialog is shown. */
-    val errorDialog: ErrorDialogUi? = null
+    val errorDialog: ErrorDialogUi? = null,
+    val showLogoutConfirm: Boolean = false
 )
 
 /** State of the Home "Attendance" card. */

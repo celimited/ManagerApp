@@ -101,6 +101,10 @@ fun AppNavigation(){
                             },
                             onStockStatusClick = {
                                 backStack.add(Screen.DistributorList)
+                            },
+                            onLogout = {
+                                backStack.clear()
+                                backStack.add(Screen.Login)
                             }
                         )
                     }

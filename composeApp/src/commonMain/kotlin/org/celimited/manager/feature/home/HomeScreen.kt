@@ -65,6 +65,7 @@ import manager.composeapp.generated.resources.ic_icon_box
 import manager.composeapp.generated.resources.ic_icon_truck
 import manager.composeapp.generated.resources.ic_icon_keyboard_next
 import manager.composeapp.generated.resources.ic_icon_location
+import manager.composeapp.generated.resources.ic_icon_logout
 import manager.composeapp.generated.resources.ic_icon_next
 import manager.composeapp.generated.resources.ic_icon_notification
 import manager.composeapp.generated.resources.ic_icon_pending
@@ -76,6 +77,9 @@ import manager.composeapp.generated.resources.ic_icon_cart
 import manager.composeapp.generated.resources.ic_icon_peoples
 import org.celimited.manager.component.ErrorDialog
 import org.celimited.manager.component.LockedFeature
+import org.celimited.manager.component.PopupCard
+import org.celimited.manager.component.PopupTitle
+import org.celimited.manager.component.PrimaryButton
 import org.celimited.manager.core.common.Feature
 import org.celimited.manager.core.common.location.rememberLocationPermissionRequester
 import org.jetbrains.compose.resources.DrawableResource
@@ -88,6 +92,7 @@ fun HomeRoute(
     onTodayStatsClick: () -> Unit,
     onStockStatusClick: () -> Unit,
     onFeatureLocked: () -> Unit,
+    onLogout: () -> Unit,
     viewModel: HomeViewModel = koinViewModel()
 ){
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -104,6 +109,7 @@ fun HomeRoute(
                 HomeUiEffect.NavigateToTodayStats -> onTodayStatsClick()
                 HomeUiEffect.NavigateToDistributorList -> onStockStatusClick()
                 HomeUiEffect.ShowUnderDevelopment -> onFeatureLocked()
+                HomeUiEffect.NavigateToLogin -> onLogout()
             }
         }
     }
@@ -134,9 +140,17 @@ fun HomeRoute(
             onTodayStatsClick = viewModel::onTodayStatsClick,
             onStockStatusClick = viewModel::onStockStatusClick,
             onLockedFeatureClick = viewModel::onLockedFeatureClick,
+            onLogoutClick = viewModel::onLogoutClick,
             userName = uiState.userName,
             userRole = uiState.userRole,
             attendanceCard = uiState.attendanceCard
+        )
+    }
+
+    if (uiState.showLogoutConfirm) {
+        LogoutConfirmDialog(
+            onConfirm = viewModel::onLogoutConfirmed,
+            onDismiss = viewModel::onLogoutDismissed
         )
     }
 
@@ -155,6 +169,7 @@ fun HomeScreen(
     onTodayStatsClick: () -> Unit,
     onStockStatusClick: () -> Unit,
     onLockedFeatureClick: () -> Unit,
+    onLogoutClick: () -> Unit,
     userName: String,
     userRole: String,
     attendanceCard: AttendanceCardUi
@@ -166,7 +181,12 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
     ){
-        TopProfile(name = userName, role = userRole, onLockedFeatureClick = onLockedFeatureClick)
+        TopProfile(
+            name = userName,
+            role = userRole,
+            onLockedFeatureClick = onLockedFeatureClick,
+            onLogoutClick = onLogoutClick
+        )
         PendingApprovalsSection()
 
         Column(
@@ -215,7 +235,12 @@ fun TopBackground(){
 }
 
 @Composable
-fun TopProfile(name: String, role: String, onLockedFeatureClick: () -> Unit){
+fun TopProfile(
+    name: String,
+    role: String,
+    onLockedFeatureClick: () -> Unit,
+    onLogoutClick: () -> Unit
+){
     Row(
         modifier = Modifier.fillMaxWidth()
             .padding(top = 24.dp, start = 12.dp, end = 12.dp),
@@ -306,6 +331,46 @@ fun TopProfile(name: String, role: String, onLockedFeatureClick: () -> Unit){
                 }
             }
         }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+                .clickable(onClick = onLogoutClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(Res.drawable.ic_icon_logout),
+                contentDescription = "Logout",
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun LogoutConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    PopupCard(onDismissRequest = onDismiss) {
+        PopupTitle(text = "Log out", color = Color(0xFF1F1059))
+        Spacer(Modifier.height(12.dp))
+        Text(text = "Are you sure you want to log out?", fontSize = 13.sp, color = Color(0xFF1E1E1E))
+        Spacer(Modifier.height(20.dp))
+        PrimaryButton(text = "Logout", onClick = onConfirm, fontSize = 14.sp, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(8.dp))
+        PrimaryButton(
+            text = "Cancel",
+            onClick = onDismiss,
+            fontSize = 14.sp,
+            containerColor = Color(0xFFEEEAFF),
+            contentColor = Color(0xFF582FFF),
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -1183,3 +1248,28 @@ data class MTDPerformanceData(
     val m2mGrowthPercent: Int,
     val ytdGrowthIsPositive: Boolean = false // controls arrow direction on the YTD pill
 )
+
+@Composable
+@Preview(showBackground = true, showSystemUi = true)
+private fun HomeScreenPreview() {
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.systemBars
+    ) { padding ->
+        HomeScreen(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            onAttendanceCardClick = {},
+            onGiveAttendanceClick = {},
+            onAISalesReportClick = {},
+            onTodayStatsClick = {},
+            onStockStatusClick = {},
+            onLockedFeatureClick = {},
+            onLogoutClick = {},
+            userName = "John Doe",
+            userRole = "Area Manager",
+            attendanceCard = AttendanceCardUi.NotGiven
+        )
+    }
+}

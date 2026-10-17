@@ -26,6 +26,7 @@ import org.celimited.manager.domain.usecase.attendance.GetCurrentLocationUseCase
 import org.celimited.manager.domain.usecase.attendance.ObserveAttendanceCardUseCase
 import org.celimited.manager.domain.usecase.attendance.SubmitAttendanceUseCase
 import org.celimited.manager.domain.usecase.home.GetCurrentUserUseCase
+import org.celimited.manager.domain.usecase.login.LogoutUseCase
 import org.celimited.manager.model.attendance.AttendanceCardStatus
 import org.celimited.manager.model.attendance.AttendancePopupContent
 import org.celimited.manager.model.attendance.AttendancePopupDecision
@@ -43,7 +44,8 @@ class HomeViewModel(
     private val getCurrentLocationUseCase: GetCurrentLocationUseCase,
     private val checkGeofenceUseCase: CheckGeofenceUseCase,
     private val submitAttendanceUseCase: SubmitAttendanceUseCase,
-    private val observeAttendanceCardUseCase: ObserveAttendanceCardUseCase
+    private val observeAttendanceCardUseCase: ObserveAttendanceCardUseCase,
+    private val logoutUseCase: LogoutUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -86,6 +88,8 @@ class HomeViewModel(
      * reopened via the My Attendance card.
      */
     fun onScreenShown() {
+        // This ViewModel can outlive a logout, so re-read the user for whoever is logged in now.
+        loadCurrentUser()
         if (!consumeAutoAttendancePopupUseCase()) return
         viewModelScope.launch {
             val popup = getAttendancePopupUseCase().toUi()
@@ -108,6 +112,22 @@ class HomeViewModel(
     /** Tap on a section that isn't built yet. */
     fun onLockedFeatureClick() {
         sendEffect(HomeUiEffect.ShowUnderDevelopment)
+    }
+
+    fun onLogoutClick() {
+        _uiState.update { it.copy(showLogoutConfirm = true) }
+    }
+
+    fun onLogoutDismissed() {
+        _uiState.update { it.copy(showLogoutConfirm = false) }
+    }
+
+    fun onLogoutConfirmed() {
+        _uiState.update { it.copy(showLogoutConfirm = false) }
+        viewModelScope.launch {
+            logoutUseCase()
+            sendEffect(HomeUiEffect.NavigateToLogin)
+        }
     }
 
     fun onGiveAttendanceClick() {

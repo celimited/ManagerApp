@@ -5,6 +5,7 @@ import org.celimited.manager.data.repository.AuthRepositoryImpl
 import org.celimited.manager.domain.repository.AuthRepository
 import org.celimited.manager.domain.usecase.login.GetSavedLoginIdUseCase
 import org.celimited.manager.domain.usecase.login.LoginUseCase
+import org.celimited.manager.domain.usecase.login.LogoutUseCase
 import org.celimited.manager.feature.login.LoginViewModel
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
@@ -14,5 +15,6 @@ val loginModule = module {
     single<AuthRepository> { AuthRepositoryImpl(get(), get(), get()) }
     factory { LoginUseCase(get(), get(), get()) }
     factory { GetSavedLoginIdUseCase(get(), get()) }
+    factory { LogoutUseCase(get(), get(), get()) }
     viewModel { LoginViewModel(get(), get(), get(), get()) }
 }

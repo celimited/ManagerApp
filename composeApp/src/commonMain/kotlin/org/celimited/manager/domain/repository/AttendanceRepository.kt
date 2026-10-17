@@ -49,4 +49,7 @@ interface AttendanceRepository {
 
     /** True only once per login — whether Home should auto-show the popup. */
     fun consumeAutoPopup(): Boolean
+
+    /** Drops the session cache (and resets the once-per-login popup flag) on logout. */
+    fun clearSessionCache()
 }
