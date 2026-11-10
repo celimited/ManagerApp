@@ -14,7 +14,49 @@ data class HomeUiState(
     val attendanceCard: AttendanceCardUi = AttendanceCardUi.Unknown,
     /** API failure popup; null when no dialog is shown. */
     val errorDialog: ErrorDialogUi? = null,
-    val showLogoutConfirm: Boolean = false
+    val showLogoutConfirm: Boolean = false,
+    val todayOrder: TodayOrderUi = TodayOrderUi(),
+    val mtdPerformance: MtdPerformanceUi = MtdPerformanceUi()
+)
+
+private const val NO_VALUE = "--"
+
+/** Home "Today's Order" cards, display-ready. "--" until the dashboard API answers. */
+@Immutable
+data class TodayOrderUi(
+    val attendance: String = NO_VALUE,
+    val orderStarted: String = NO_VALUE,
+    val idleSr: String = NO_VALUE,
+    val callProductivity: String = NO_VALUE,
+    val visitProductivity: String = NO_VALUE,
+    val lpc: String = NO_VALUE
+)
+
+/** Home "MTD Performance" block, display-ready. */
+@Immutable
+data class MtdPerformanceUi(
+    /** 0–100, drives the progress bar. */
+    val mtdAchievedProgress: Float = 0f,
+    val mtdAchieved: String = NO_VALUE,
+    val ytdAchievedProgress: Float = 0f,
+    val ytdAchieved: String = NO_VALUE,
+    val tillDateTarget: String = NO_VALUE,
+    val mtdGrowth: GrowthUi = GrowthUi(),
+    val ytdGrowth: GrowthUi = GrowthUi(),
+    val m2mGrowth: GrowthUi = GrowthUi(),
+    val strikeRate: String = NO_VALUE,
+    val lpc: String = NO_VALUE,
+    val mtdSalesValue: String = NO_VALUE,
+    val ytdSalesValue: String = NO_VALUE,
+    val orderVsDelivery: String = NO_VALUE,
+    val coverage: String = NO_VALUE
+)
+
+/** A growth chip; negative growth shows a down arrow on a yellow chip. */
+@Immutable
+data class GrowthUi(
+    val value: String = NO_VALUE,
+    val isPositive: Boolean = true
 )
 
 /** State of the Home "Attendance" card. */

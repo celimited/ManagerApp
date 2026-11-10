@@ -23,15 +23,6 @@ enum class BreakdownGroup(val label: String) {
 // ---------- My Summary ----------
 
 @Immutable
-data class AchievementHeaderUi(
-    val percent: Int,
-    val achieved: String,
-    val target: String,
-    /** e.g. "Total · Month to date · Day 21 of 30" */
-    val periodLabel: String
-)
-
-@Immutable
 data class AttendanceUi(
     val totalSr: Int,
     val presentPercent: Int,
@@ -72,10 +63,6 @@ data class TrackCardUi(
 
 @Immutable
 data class RunningTrackUi(
-    val achieved: String,
-    val target: String,
-    val percent: Int,
-    val expectedPercent: Int,
     val today: TrackCardUi,
     val tillDate: TrackCardUi
 )
@@ -106,7 +93,6 @@ data class KeyMetricUi(
 
 @Immutable
 data class SummaryUi(
-    val header: AchievementHeaderUi,
     val attendance: AttendanceUi,
     val call: CallProductivityUi,
     val sku: SkuProductivityUi,
@@ -132,7 +118,9 @@ data class BreakdownItemUi(
 @Immutable
 data class LevelChipUi(
     val key: String,
-    val label: String
+    val label: String,
+    /** Numeric level for APIs that take `userLevel`; null if the server omitted it. */
+    val userLevel: Int?
 )
 
 @Immutable
@@ -202,8 +190,9 @@ data class TeamUi(
 data class SrCardUi(
     val srId: Int,
     val name: String,
-    val location: String,
-    val territory: String,
+    val designation: String,
+    /** e.g. "[STC003] South". */
+    val levelName: String,
     val isOnline: Boolean,
     val checkIn: String,
     val firstOrder: String,
@@ -221,10 +210,6 @@ data class TodayStatsUiState(
     // My Summary
     val summary: SummaryUi? = null,
     val isSummaryLoading: Boolean = false,
-    val breakdownGroup: BreakdownGroup = BreakdownGroup.SkuWise,
-    val breakdownQuery: String = "",
-    val breakdown: ImmutableList<BreakdownItemUi> = persistentListOf(),
-    val isBreakdownLoading: Boolean = false,
 
     // My Team
     val levels: ImmutableList<LevelChipUi> = persistentListOf(),
@@ -240,12 +225,9 @@ data class TodayStatsUiState(
 
     // SR
     val srQuery: String = "",
+    /** SRs matching [srQuery] (filtered locally; the API returns every SR at once). */
     val srs: ImmutableList<SrCardUi> = persistentListOf(),
     val isSrLoading: Boolean = false,
-    /** Last loaded page (1-based); 0 = nothing loaded yet. */
-    val srPage: Int = 0,
-    val srHasMore: Boolean = false,
-    val isSrLoadingMore: Boolean = false,
 
     /** API failure popup; null when no dialog is shown. */
     val errorDialog: ErrorDialogUi? = null

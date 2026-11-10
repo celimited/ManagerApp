@@ -161,7 +161,8 @@ fun AttendanceLeaveScreen(
         modifier = modifier
             .verticalScroll(scrollState)
     ) {
-        PendingLeaveRequestSection()
+        // Hidden until pending leave requests come from the API (currently dummy data).
+        // PendingLeaveRequestSection()
         MonthlyAttendanceSummary(summary = uiState.summary)
         MonthlyCalenderSection(
             year = uiState.year,

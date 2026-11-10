@@ -76,7 +76,7 @@ data class CallProductivityDto(
 data class SkuProductivityDto(
     val lpc: Double? = null,
     val tlsd: Double? = null,
-    val pCase: Double? = null
+    val pcase: Double? = null
 )
 
 @Serializable
@@ -96,19 +96,82 @@ data class SrListDataDto(
     val totalCount: Int? = null
 )
 
+/** today-stats/srs?userId=: one SR row. Field names (incl. misspellings) match the API. */
 @Serializable
 data class SrStatDto(
     val srId: Int? = null,
-    val name: String? = null,
-    val photoUrl: String? = null,
-    val locationName: String? = null,
-    val territoryName: String? = null,
-    val isOnline: Boolean? = null,
-    val checkInAt: String? = null,
-    val firstOrderAt: String? = null,
-    val lastOrderAt: String? = null,
+    val srCode: String? = null,
+    val srName: String? = null,
+    val srDesignation: String? = null,
+    val contactNo: String? = null,
+    val attendanceTime: String? = null,
+    val firstOrderTime: String? = null,
+    val lastOrderTime: String? = null,
+    val levelName: String? = null,
+    val schedulecall: Double? = null,
+    val placement: Double? = null,
+    val successfullMemo: Double? = null,
     val strikeRate: Double? = null,
     val productiveRate: Double? = null,
-    val lpc: Double? = null,
-    val orderAchievementPercent: Double? = null
+    val achievement: Double? = null,
+    val lpsc: Double? = null,
+    val targetValue: Double? = null,
+    val orderValue: Double? = null
+)
+
+/** today-stats/order-summary/: every My Summary card in one response. */
+@Serializable
+data class TodaySummaryDataDto(
+    val attendance: AttendanceStatsDto? = null,
+    val callProductivity: CallProductivityDto? = null,
+    val skuProductivity: SkuProductivityDto? = null,
+    val memo: MemoMetricsDto? = null,
+    val runningTrack: RunningTrackDto? = null,
+    val inventoryStatus: InventoryStatsDto? = null,
+    val outletStatus: OutletStatusDto? = null
+)
+
+@Serializable
+data class RunningTrackDto(
+    val targetAchievement: RunningTargetAchievementDto? = null,
+    val totalTargetAchievement: RunningTotalTargetAchievementDto? = null
+)
+
+/** runningTrack.targetAchievement — the "Today" block reads the todays* fields. */
+@Serializable
+data class RunningTargetAchievementDto(
+    val todaysTarget: Double? = null,
+    val todaysOrder: Double? = null,
+    val todaysAchievement: Double? = null,
+    val tillDateTarget: Double? = null,
+    val tillDateOrder: Double? = null,
+    val tillDateAchievement: Double? = null
+)
+
+/** runningTrack.totalTargetAchievement — feeds the "Till date" block. */
+@Serializable
+data class RunningTotalTargetAchievementDto(
+    val totalTarget: Double? = null,
+    val totalOrder: Double? = null,
+    val totalAchievement: Double? = null
+)
+
+@Serializable
+data class InventoryStatsDto(
+    val stockValue: Double? = null,
+    val openingStock: Double? = null,
+    val dbCount: Int? = null,
+    val zeroStock: Int? = null,
+    val currentStock: Double? = null,
+    val zeroLifting: Int? = null
+)
+
+@Serializable
+data class OutletStatusDto(
+    // The API's keys are singular (activeOutlet, not activeOutlets).
+    val activeOutlet: Int? = null,
+    val zeroSalesOutlet: Int? = null,
+    val activeSku: Int? = null,
+    val zeroSalesSku: Int? = null,
+    val orderCount: Int? = null
 )

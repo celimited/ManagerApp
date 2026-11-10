@@ -16,6 +16,7 @@ data class UserDto(
     val phone: String? = null,
     val profilePictureUrl: String? = null,
     val role: String? = null,
+    val userLevel: Int? = null,
     val status: String? = null
 )
 

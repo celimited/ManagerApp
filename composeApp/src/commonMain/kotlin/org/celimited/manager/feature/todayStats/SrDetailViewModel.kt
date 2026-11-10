@@ -2,10 +2,8 @@ package org.celimited.manager.feature.todayStats
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,16 +15,12 @@ import org.celimited.manager.core.common.AppError
 import org.celimited.manager.core.common.DataResult
 import org.celimited.manager.core.common.format.formatTakaCompact
 import org.celimited.manager.domain.usecase.todayStats.GetSrDetailUseCase
-import org.celimited.manager.domain.usecase.todayStats.GetSrOrdersUseCase
 import org.celimited.manager.model.todayStats.SrDetail
-import org.celimited.manager.model.todayStats.SrOrderItem
-import org.celimited.manager.model.todayStats.SrWorkMode
 import kotlin.math.roundToInt
 
 class SrDetailViewModel(
     private val srId: Int,
-    private val getSrDetailUseCase: GetSrDetailUseCase,
-    private val getSrOrdersUseCase: GetSrOrdersUseCase
+    private val getSrDetailUseCase: GetSrDetailUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SrDetailUiState())
@@ -36,7 +30,6 @@ class SrDetailViewModel(
     val uiEffect = _uiEffect.receiveAsFlow()
 
     private var detailJob: Job? = null
-    private var ordersJob: Job? = null
     private var retryAction: (() -> Unit)? = null
     private var sessionExpiredSent = false
 
@@ -44,18 +37,16 @@ class SrDetailViewModel(
     fun onScreenOpened() {
         sessionExpiredSent = false
         loadDetail()
-        loadOrders()
     }
 
-    fun onOrderGroupSelected(group: BreakdownGroup) {
-        if (group == _uiState.value.orderGroup) return
-        _uiState.update { it.copy(orderGroup = group) }
-        loadOrders()
+    fun onCallClick() {
+        val phone = _uiState.value.profile?.phoneNo?.takeIf { it.isNotBlank() } ?: return
+        viewModelScope.launch { _uiEffect.send(SrDetailUiEffect.OpenUri("tel:${dialableNumber(phone)}")) }
     }
 
-    fun onOrderQueryChange(query: String) {
-        _uiState.update { it.copy(orderQuery = query) }
-        loadOrders(debounce = true)
+    fun onWhatsAppClick() {
+        val url = _uiState.value.profile?.whatsAppUrl ?: return
+        viewModelScope.launch { _uiEffect.send(SrDetailUiEffect.OpenUri(url)) }
     }
 
     fun onRetry() {
@@ -84,25 +75,6 @@ class SrDetailViewModel(
         }
     }
 
-    private fun loadOrders(debounce: Boolean = false) {
-        ordersJob?.cancel()
-        ordersJob = viewModelScope.launch {
-            if (debounce) delay(SEARCH_DEBOUNCE_MS)
-            _uiState.update { it.copy(isOrdersLoading = true) }
-            val state = _uiState.value
-            when (val result = getSrOrdersUseCase(srId, state.orderGroup.toOrderGroupBy(), state.orderQuery)) {
-                is DataResult.Success -> _uiState.update {
-                    it.copy(isOrdersLoading = false, orders = result.data.map { item -> item.toUi() }.toImmutableList())
-                }
-                is DataResult.Error -> {
-                    _uiState.update { it.copy(isOrdersLoading = false) }
-                    handleError(result.error) { loadOrders() }
-                }
-                is DataResult.Loading -> Unit
-            }
-        }
-    }
-
     private suspend fun handleError(error: AppError, retry: () -> Unit) {
         if (error is AppError.Unauthorized) {
             if (!sessionExpiredSent) {
@@ -120,21 +92,16 @@ class SrDetailViewModel(
         profile = SrProfileUi(
             name = profile.name,
             designation = profile.designation,
-            location = profile.locationName,
+            srCode = profile.srCode,
             territory = profile.territoryName,
             isOnline = profile.isOnline,
             phoneNo = profile.phoneNo,
             whatsAppUrl = profile.whatsAppUrl
         ),
         timeline = SrTimelineUi(
-            spent = durationText(timeline.spentMinutes),
-            loggedInTime = timeText(timeline.loggedInAt),
-            workMode = when (timeline.workMode) {
-                SrWorkMode.ON_FIELD -> "On-Field"
-                SrWorkMode.OFFICE -> "Office"
-                SrWorkMode.OTHER -> "Other"
-            },
-            visited = if (timeline.hasVisited) "Yes" else "No",
+            spent = timeline.spentHours.ifBlank { "--" },
+            loggedInTime = timeText(timeline.attendanceAt),
+            visited = timeline.firstVisitAt?.let(::timeText) ?: "No",
             firstOrderTime = timeText(timeline.firstOrderAt),
             firstOrderOutlet = timeline.firstOrderOutlet.orEmpty(),
             lastOrderTime = timeText(timeline.lastOrderAt),
@@ -144,30 +111,30 @@ class SrDetailViewModel(
             scheduled = countText(work.scheduled),
             visited = countText(work.visited),
             productive = countText(work.productive),
-            lpc = decimalText(work.lpc)
+            lpc = decimalText(work.lpc),
+            remaining = countText(work.remaining),
+            strikeRate = percentText(work.strikeRate),
+            productiveRate = percentText(work.productiveRate)
         ),
         target = SrTargetUi(
             todayTarget = formatTakaCompact(target.todayTarget),
-            orderValue = formatTakaCompact(target.orderValue),
-            achievementPercent = target.achievementPercent.roundToInt()
+            todayOrder = formatTakaCompact(target.todayOrder),
+            todayAchievementPercent = target.todayAchievement.roundToInt(),
+            tillDateTarget = formatTakaCompact(target.tillDateTarget),
+            tillDateOrder = formatTakaCompact(target.tillDateOrder),
+            tillDateAchievementPercent = target.tillDateAchievement.roundToInt()
+        ),
+        outlets = SrOutletStatusUi(
+            activeOutlets = countText(outlets.activeOutlets),
+            zeroSalesOutlets = countText(outlets.zeroSalesOutlets),
+            activeSkus = countText(outlets.activeSkus),
+            zeroSalesSkus = countText(outlets.zeroSalesSkus)
         )
     )
 
-    private fun SrOrderItem.toUi() = SrOrderUi(
-        id = id,
-        name = name,
-        subName = subName,
-        qty = decimalText(qty),
-        memo = countText(memoCount),
-        specialDiscount = decimalText(specialDiscount),
-        promoDiscount = decimalText(promoDiscount),
-        totalDiscount = decimalText(totalDiscount),
-        freeValue = decimalText(freeValue),
-        orderQtyUom = decimalText(orderQtyUom),
-        freeQty = decimalText(freeQty)
-    )
-
-    private companion object {
-        const val SEARCH_DEBOUNCE_MS = 300L
+    /** The API sends BD mobiles without the leading 0 ("1755621876"); the dialer needs "01755621876". */
+    private fun dialableNumber(phone: String): String {
+        val digits = phone.trim()
+        return if (digits.length == 10 && digits.startsWith("1") && digits.all { it.isDigit() }) "0$digits" else digits
     }
 }

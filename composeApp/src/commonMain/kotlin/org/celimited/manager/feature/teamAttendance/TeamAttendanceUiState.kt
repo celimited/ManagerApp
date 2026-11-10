@@ -26,7 +26,9 @@ data class HierarchyLevelTabUi(
     /** Plain level name, e.g. "Division". */
     val name: String,
     /** "Division\n(2/20)". */
-    val label: String
+    val label: String,
+    /** Numeric level for APIs that take `userLevel`; null if the server omitted it. */
+    val userLevel: Int?
 )
 
 @Immutable

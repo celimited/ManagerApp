@@ -67,7 +67,6 @@ import manager.composeapp.generated.resources.ic_icon_trending_up
 import org.celimited.manager.component.ErrorDialog
 import org.celimited.manager.component.LockedAlpha
 import org.celimited.manager.component.TopBar
-import org.celimited.manager.component.showUnderDevelopment
 import org.celimited.manager.core.common.Feature
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
@@ -98,8 +97,6 @@ fun DistributorDetailRoute(
     )
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
-
     LaunchedEffect(Unit) {
         viewModel.onScreenOpened()
     }
@@ -108,9 +105,6 @@ fun DistributorDetailRoute(
         viewModel.uiEffect.collect { effect ->
             when (effect) {
                 DistributorDetailUiEffect.SessionExpired -> onSessionExpired()
-                // Launched so a showing snackbar doesn't block the next effect.
-                DistributorDetailUiEffect.ShowUnderDevelopment ->
-                    launch { snackbarHostState.showUnderDevelopment() }
             }
         }
     }
@@ -118,7 +112,6 @@ fun DistributorDetailRoute(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopBar(
                 title = "Distributor Details",
@@ -149,7 +142,8 @@ fun DistributorDetailRoute(
             onAddIssueClick = onAddIssueClick,
             onAddNoteClick = {},
             onHistoryClick = {},
-            onLockedFeatureClick = viewModel::onLockedFeatureClick,
+            // Locked actions ignore taps; no "under development" message.
+            onLockedFeatureClick = {},
             onApprovalBannerClick = {},
             onViewSuggestionsClick = {},
             onStockSummaryItemClick = {}

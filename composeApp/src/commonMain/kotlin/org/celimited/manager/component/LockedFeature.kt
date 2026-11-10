@@ -2,7 +2,6 @@ package org.celimited.manager.component
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -44,10 +43,4 @@ fun LockedFeature(
                 .clickable(onClick = onLockedClick)
         )
     }
-}
-
-/** Replaces any visible snackbar so repeated taps don't queue up a stack of them. */
-suspend fun SnackbarHostState.showUnderDevelopment() {
-    currentSnackbarData?.dismiss()
-    showSnackbar(UnderDevelopmentMessage)
 }

@@ -11,7 +11,9 @@ data class HierarchyLevel(
     val key: String,
     val name: String,
     val presentCount: Int,
-    val totalCount: Int
+    val totalCount: Int,
+    /** Numeric level id for APIs that take `userLevel` (e.g. 6 = TERRITORY); null if the server omitted it. */
+    val userLevel: Int?
 )
 
 /** Today's attendance for one hierarchy level. */

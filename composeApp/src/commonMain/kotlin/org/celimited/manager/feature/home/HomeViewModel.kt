@@ -17,6 +17,12 @@ import org.celimited.manager.component.ErrorDialogUi
 import org.celimited.manager.core.common.AppError
 import org.celimited.manager.core.common.DataResult
 import org.celimited.manager.core.common.format.formatShortDate
+import org.celimited.manager.core.common.format.formatTakaCompact
+import org.celimited.manager.domain.usecase.home.GetDashboardInfoUseCase
+import org.celimited.manager.model.home.MtdPerformance
+import org.celimited.manager.model.home.TodayOrder
+import kotlin.math.abs
+import kotlin.math.round
 import org.celimited.manager.core.common.format.formatTimeOfDay
 import org.celimited.manager.core.common.location.GeoLocation
 import org.celimited.manager.domain.usecase.attendance.CheckGeofenceUseCase
@@ -45,7 +51,8 @@ class HomeViewModel(
     private val checkGeofenceUseCase: CheckGeofenceUseCase,
     private val submitAttendanceUseCase: SubmitAttendanceUseCase,
     private val observeAttendanceCardUseCase: ObserveAttendanceCardUseCase,
-    private val logoutUseCase: LogoutUseCase
+    private val logoutUseCase: LogoutUseCase,
+    private val getDashboardInfoUseCase: GetDashboardInfoUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -90,10 +97,27 @@ class HomeViewModel(
     fun onScreenShown() {
         // This ViewModel can outlive a logout, so re-read the user for whoever is logged in now.
         loadCurrentUser()
+        loadDashboardInfo()
         if (!consumeAutoAttendancePopupUseCase()) return
         viewModelScope.launch {
             val popup = getAttendancePopupUseCase().toUi()
             _uiState.update { it.copy(attendancePopup = popup) }
+        }
+    }
+
+    /**
+     * Refreshes Today's Order + MTD Performance. A failure keeps the "--" placeholders without a
+     * dialog so the rest of Home (and the check-in popup) stays usable.
+     */
+    private fun loadDashboardInfo() {
+        viewModelScope.launch {
+            val info = (getDashboardInfoUseCase() as? DataResult.Success)?.data ?: return@launch
+            _uiState.update {
+                it.copy(
+                    todayOrder = info.todayOrder.toUi(),
+                    mtdPerformance = info.mtdPerformance?.toUi() ?: MtdPerformanceUi()
+                )
+            }
         }
     }
 
@@ -107,11 +131,6 @@ class HomeViewModel(
 
     fun onStockStatusClick() {
         sendEffect(HomeUiEffect.NavigateToDistributorList)
-    }
-
-    /** Tap on a section that isn't built yet. */
-    fun onLockedFeatureClick() {
-        sendEffect(HomeUiEffect.ShowUnderDevelopment)
     }
 
     fun onLogoutClick() {
@@ -333,6 +352,44 @@ class HomeViewModel(
         fromDate = fromDate?.let(::formatShortDate).orEmpty(),
         toDate = toDate?.let(::formatShortDate).orEmpty()
     )
+
+    private fun TodayOrder.toUi() = TodayOrderUi(
+        attendance = "$presentSr/$totalSr",
+        orderStarted = orderStarted.toString(),
+        idleSr = idleSr.toString(),
+        callProductivity = callProductivity.toPercentText(),
+        visitProductivity = visitProductivity.toPercentText(),
+        lpc = lpc.toPercentText()
+    )
+
+    private fun MtdPerformance.toUi() = MtdPerformanceUi(
+        mtdAchievedProgress = mtdAchieved.toFloat().coerceIn(0f, 100f),
+        mtdAchieved = mtdAchieved.toPercentText(),
+        ytdAchievedProgress = ytdAchieved.toFloat().coerceIn(0f, 100f),
+        ytdAchieved = ytdAchieved.toPercentText(),
+        tillDateTarget = formatTakaCompact(tillDateTarget),
+        mtdGrowth = mtdGrowth.toGrowthUi(),
+        ytdGrowth = ytdGrowth.toGrowthUi(),
+        m2mGrowth = m2mGrowth.toGrowthUi(),
+        strikeRate = strikeRate.toPercentText(),
+        lpc = lpc.toPercentText(),
+        mtdSalesValue = formatTakaCompact(mtdSalesValue),
+        ytdSalesValue = formatTakaCompact(ytdSalesValue),
+        orderVsDelivery = orderVsDelivery.toPercentText(),
+        coverage = coverage.toPercentText()
+    )
+
+    /** Sign comes from the chip's arrow, so the text shows the magnitude only. */
+    private fun Double.toGrowthUi() = GrowthUi(value = abs(this).toPercentText(), isPositive = this >= 0)
+
+    /** 12.0 → "12%", 12.34 → "12.3%". */
+    private fun Double.toPercentText(): String {
+        val tenths = round(this * 10).toLong()
+        val whole = tenths / 10
+        val fraction = abs(tenths % 10)
+        val sign = if (tenths < 0 && whole == 0L) "-" else ""
+        return if (fraction == 0L) "$sign$whole%" else "$sign$whole.$fraction%"
+    }
 
     // Prefer whatever message the API itself returned; fall back to a generic
     // notice only when there's no server response to read one from at all.

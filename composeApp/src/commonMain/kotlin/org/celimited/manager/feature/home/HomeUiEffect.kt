@@ -5,6 +5,5 @@ sealed interface HomeUiEffect {
     data object RequestLocationPermission : HomeUiEffect
     data object NavigateToTodayStats : HomeUiEffect
     data object NavigateToDistributorList : HomeUiEffect
-    data object ShowUnderDevelopment : HomeUiEffect
     data object NavigateToLogin : HomeUiEffect
 }

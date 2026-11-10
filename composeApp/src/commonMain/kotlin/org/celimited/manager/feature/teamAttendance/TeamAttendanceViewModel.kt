@@ -134,7 +134,8 @@ class TeamAttendanceViewModel(
     private fun HierarchyLevel.toUi() = HierarchyLevelTabUi(
         key = key,
         name = name,
-        label = "$name\n($presentCount/$totalCount)"
+        label = "$name\n($presentCount/$totalCount)",
+        userLevel = userLevel
     )
 
     private fun TeamAttendanceCounts.toUi() = TeamSummaryUi(

@@ -89,7 +89,8 @@ data class HierarchyLevelDto(
     val levelKey: String? = null,
     val levelName: String? = null,
     val presentCount: Int? = null,
-    val totalCount: Int? = null
+    val totalCount: Int? = null,
+    val userLevel: Int? = null
 )
 
 @Serializable

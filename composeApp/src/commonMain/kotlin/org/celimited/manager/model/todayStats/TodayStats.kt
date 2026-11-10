@@ -128,3 +128,21 @@ data class OrderBreakdownItem(
     val orderValue: Double,
     val targetValue: Double
 )
+
+/** My Team cards for one hierarchy level, from order-summary-by-hierarchy: one row per unit per card. */
+data class TeamSummary(
+    val attendance: List<UnitStats<AttendanceStats>>,
+    val productivity: List<UnitStats<ProductivityStats>>,
+    val target: List<UnitStats<TargetStats>>,
+    val outlets: List<UnitStats<ZeroSalesStats>>
+)
+
+/** Everything on the My Summary cards, from the single order-summary endpoint. */
+data class TodaySummary(
+    val attendance: AttendanceStats,
+    val productivity: ProductivityStats,
+    val today: TargetPeriod,
+    val tillDate: TargetPeriod,
+    val inventory: InventoryStats,
+    val outlets: ZeroSalesStats
+)

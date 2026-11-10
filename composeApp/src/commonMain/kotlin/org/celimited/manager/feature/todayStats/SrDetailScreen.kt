@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -28,13 +27,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -43,8 +40,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.collections.immutable.ImmutableList
-import kotlinx.collections.immutable.toImmutableList
 import manager.composeapp.generated.resources.Res
 import manager.composeapp.generated.resources.ic_icon_attendance
 import manager.composeapp.generated.resources.ic_icon_call
@@ -63,7 +58,6 @@ import org.koin.core.parameter.parametersOf
 
 private val CallBlue = Color(0xFF2F80ED)
 private val ChatGreen = Color(0xFF25D366)
-private val OrderGroups: ImmutableList<BreakdownGroup> = BreakdownGroup.entries.toImmutableList()
 
 @Composable
 fun SrDetailRoute(
@@ -77,6 +71,7 @@ fun SrDetailRoute(
     )
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(Unit) {
         viewModel.onScreenOpened()
@@ -86,6 +81,8 @@ fun SrDetailRoute(
         viewModel.uiEffect.collect { effect ->
             when (effect) {
                 SrDetailUiEffect.SessionExpired -> onSessionExpired()
+                // No dialer/WhatsApp on the device (e.g. a tablet) must not crash the page.
+                is SrDetailUiEffect.OpenUri -> runCatching { uriHandler.openUri(effect.uri) }
             }
         }
     }
@@ -108,16 +105,11 @@ fun SrDetailRoute(
             timeline = uiState.timeline,
             work = uiState.work,
             target = uiState.target,
+            outlets = uiState.outlets,
             isLoading = uiState.isLoading,
-            orderGroup = uiState.orderGroup,
-            orderQuery = uiState.orderQuery,
-            orders = uiState.orders,
-            isOrdersLoading = uiState.isOrdersLoading,
-            onOrderGroupSelected = viewModel::onOrderGroupSelected,
-            onOrderQueryChange = viewModel::onOrderQueryChange,
-            // UI only — call / WhatsApp / map actions to be wired when the API provides the data.
-            onCallClick = {},
-            onWhatsAppClick = {},
+            onCallClick = viewModel::onCallClick,
+            onWhatsAppClick = viewModel::onWhatsAppClick,
+            // UI only — map view to be wired when the API provides visit locations.
             onMapViewClick = {}
         )
     }
@@ -134,19 +126,12 @@ fun SrDetailScreen(
     timeline: SrTimelineUi?,
     work: SrWorkUi?,
     target: SrTargetUi?,
+    outlets: SrOutletStatusUi?,
     isLoading: Boolean,
-    orderGroup: BreakdownGroup,
-    orderQuery: String,
-    orders: ImmutableList<SrOrderUi>,
-    isOrdersLoading: Boolean,
-    onOrderGroupSelected: (BreakdownGroup) -> Unit,
-    onOrderQueryChange: (String) -> Unit,
     onCallClick: () -> Unit,
     onWhatsAppClick: () -> Unit,
     onMapViewClick: () -> Unit
 ) {
-    var isSearchOpen by rememberSaveable { mutableStateOf(orderQuery.isNotEmpty()) }
-
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp),
@@ -169,33 +154,8 @@ fun SrDetailScreen(
             timeline?.let { item(key = "timeline") { WorkTimelineCard(it) } }
             work?.let { item(key = "work") { WorkSummaryCard(it, onMapViewClick) } }
             target?.let { item(key = "target") { TargetCard(it) } }
-        }
-
-        item(key = "orders_header") {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Order Details", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TitleColor)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    PillChips(
-                        options = OrderGroups,
-                        selected = orderGroup,
-                        label = { it.label },
-                        onSelect = onOrderGroupSelected,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    SearchToggleButton(active = isSearchOpen) {
-                        if (isSearchOpen && orderQuery.isNotEmpty()) onOrderQueryChange("")
-                        isSearchOpen = !isSearchOpen
-                    }
-                }
-                if (isSearchOpen) SearchField(orderQuery, "Search ${orderGroup.label}", onOrderQueryChange)
-            }
-        }
-
-        when {
-            orders.isEmpty() && isOrdersLoading -> item(key = "orders_loading") { LoadingBox() }
-            orders.isEmpty() -> item(key = "orders_empty") { EmptyText("No orders found") }
-            else -> items(orders, key = { "order_${it.id}" }) { OrderCard(it) }
+            outlets?.let { item(key = "outlets") { OutletStatusCard(it) } }
+            // Order Details is hidden until the API's orderDetails item shape is known.
         }
     }
 }
@@ -218,15 +178,8 @@ private fun ProfileCard(profile: SrProfileUi, onCallClick: () -> Unit, onWhatsAp
             Spacer(Modifier.height(2.dp))
             Text(profile.designation, fontSize = 12.sp, color = SubtleText, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_icon_location),
-                    contentDescription = null,
-                    tint = TitleColor,
-                    modifier = Modifier.size(13.dp)
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(profile.location, fontSize = 12.sp, color = TitleColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (profile.srCode.isNotEmpty()) {
+                Text("Code: ${profile.srCode}", fontSize = 12.sp, color = TitleColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         ActionCircle(Res.drawable.ic_icon_call, "Call", CallBlue, onCallClick)
@@ -262,7 +215,7 @@ private fun WorkTimelineCard(timeline: SrTimelineUi) {
         trailing = { Badge("Spent: ${timeline.spent}", Tone.Highlight) }
     ) {
         TileRow {
-            TimelineTile(Res.drawable.ic_icon_attendance, "Logged In", "${timeline.loggedInTime} • ${timeline.workMode}", tileModifier())
+            TimelineTile(Res.drawable.ic_icon_attendance, "Logged In", timeline.loggedInTime, tileModifier())
             TimelineTile(Res.drawable.ic_icon_location, "Visited", timeline.visited, tileModifier())
         }
         Spacer(Modifier.height(8.dp))
@@ -327,78 +280,66 @@ private fun WorkSummaryCard(work: SrWorkUi, onMapViewClick: () -> Unit) {
             StatTile(work.productive, "Productive", tileModifier(), Tone.Positive)
             StatTile(work.lpc, "LPC", tileModifier(), Tone.Caution)
         }
+        Spacer(Modifier.height(8.dp))
+        TileRow {
+            StatTile(work.remaining, "Remaining", tileModifier(), Tone.Caution)
+            StatTile(work.strikeRate, "Strike Rate", tileModifier())
+            StatTile(work.productiveRate, "Productive", tileModifier(), Tone.Positive)
+        }
     }
 }
 
 @Composable
 private fun TargetCard(target: SrTargetUi) {
     StatsCard(icon = Res.drawable.ic_icon_trending_up, title = "Target") {
-        TileRow {
-            StatTile(target.todayTarget, "Today's Target", tileModifier())
-            StatTile(target.orderValue, "Order Value", tileModifier(), Tone.Positive)
-            Column(
-                modifier = tileModifier()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(TileBg)
-                    .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 8.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text("Achievement", fontSize = 12.sp, color = SubtleText)
-                Spacer(Modifier.height(4.dp))
-                Text("${target.achievementPercent}%", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Red)
-                Spacer(Modifier.height(6.dp))
-                ProgressBar(target.achievementPercent.toProgress(), Red, height = 5.dp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun OrderCard(order: SrOrderUi) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
-            .padding(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(order.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TitleColor, modifier = Modifier.weight(1f))
-            InlineValue("Qty", order.qty)
-        }
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(order.subName, fontSize = 12.sp, color = SubtleText, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            InlineValue("Memo", order.memo)
-        }
-        CardDivider()
-        Row {
-            InlineValue("Special Discount", order.specialDiscount, Modifier.weight(1f))
-            InlineValue("Promo Discount", order.promoDiscount, Modifier.weight(1f))
-            InlineValue("Total Discount", order.totalDiscount, Modifier.weight(1f))
-        }
+        Text("Today", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TitleColor)
         Spacer(Modifier.height(6.dp))
-        Row {
-            InlineValue("Free Value", order.freeValue, Modifier.weight(1f))
-            InlineValue("Order in UOM", order.orderQtyUom, Modifier.weight(1f))
-            InlineValue("Free Qty", order.freeQty, Modifier.weight(1f))
+        TileRow {
+            StatTile(target.todayTarget, "Target", tileModifier())
+            StatTile(target.todayOrder, "Order Value", tileModifier(), Tone.Positive)
+            AchievementTile(target.todayAchievementPercent, tileModifier())
+        }
+        Spacer(Modifier.height(10.dp))
+        Text("Till date", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TitleColor)
+        Spacer(Modifier.height(6.dp))
+        TileRow {
+            StatTile(target.tillDateTarget, "Target", tileModifier())
+            StatTile(target.tillDateOrder, "Order Value", tileModifier(), Tone.Positive)
+            AchievementTile(target.tillDateAchievementPercent, tileModifier())
         }
     }
 }
 
 @Composable
-private fun InlineValue(label: String, value: String, modifier: Modifier = Modifier) {
-    Text(
-        text = buildAnnotatedString {
-            append("$label: ")
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Accent)) { append(value) }
-        },
-        fontSize = 11.sp,
-        color = SubtleText,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+private fun AchievementTile(percent: Int, modifier: Modifier) {
+    Column(
         modifier = modifier
-    )
+            .clip(RoundedCornerShape(12.dp))
+            .background(TileBg)
+            .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Achievement", fontSize = 12.sp, color = SubtleText)
+        Spacer(Modifier.height(4.dp))
+        Text("$percent%", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Red)
+        Spacer(Modifier.height(6.dp))
+        ProgressBar(percent.toProgress(), Red, height = 5.dp)
+    }
 }
+
+@Composable
+private fun OutletStatusCard(outlets: SrOutletStatusUi) {
+    StatsCard(icon = Res.drawable.ic_icon_order_status, title = "Outlet Status") {
+        TileRow {
+            StatTile(outlets.activeOutlets, "Active Outlet", tileModifier(), Tone.Positive)
+            StatTile(outlets.zeroSalesOutlets, "Zero Sales Outlet", tileModifier(), Tone.Caution)
+        }
+        Spacer(Modifier.height(8.dp))
+        TileRow {
+            StatTile(outlets.activeSkus, "Active SKU", tileModifier(), Tone.Positive)
+            StatTile(outlets.zeroSalesSkus, "Zero Sales SKU", tileModifier(), Tone.Caution)
+        }
+    }
+}
+

@@ -2,11 +2,11 @@ package org.celimited.manager.feature.todayStats
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,15 +22,18 @@ import org.celimited.manager.core.common.format.formatTakaCompact
 import org.celimited.manager.domain.usecase.attendance.GetSubordinateHierarchyLevelsUseCase
 import org.celimited.manager.domain.usecase.todayStats.GetOrderBreakdownUseCase
 import org.celimited.manager.domain.usecase.todayStats.GetSrStatsListUseCase
-import org.celimited.manager.domain.usecase.todayStats.GetTodayStatsOverviewUseCase
+import org.celimited.manager.domain.usecase.todayStats.GetTeamSummaryUseCase
+import org.celimited.manager.domain.usecase.todayStats.GetTodaySummaryUseCase
 import org.celimited.manager.model.todayStats.SrSummary
 import org.celimited.manager.model.todayStats.TargetPeriod
-import org.celimited.manager.model.todayStats.TodayStatsOverview
+import org.celimited.manager.model.todayStats.TeamSummary
 import org.celimited.manager.model.todayStats.TodayStatsScope
+import org.celimited.manager.model.todayStats.TodaySummary
 import kotlin.math.roundToInt
 
 class TodayStatsViewModel(
-    private val getTodayStatsOverviewUseCase: GetTodayStatsOverviewUseCase,
+    private val getTodaySummaryUseCase: GetTodaySummaryUseCase,
+    private val getTeamSummaryUseCase: GetTeamSummaryUseCase,
     private val getOrderBreakdownUseCase: GetOrderBreakdownUseCase,
     private val getSrStatsListUseCase: GetSrStatsListUseCase,
     private val getSubordinateHierarchyLevelsUseCase: GetSubordinateHierarchyLevelsUseCase
@@ -43,12 +46,13 @@ class TodayStatsViewModel(
     val uiEffect = _uiEffect.receiveAsFlow()
 
     private var summaryJob: Job? = null
-    private var breakdownJob: Job? = null
     private var levelsJob: Job? = null
     private var teamJob: Job? = null
     private var teamOrdersJob: Job? = null
     private var srJob: Job? = null
-    private var srMoreJob: Job? = null
+
+    // Full SR list from the last load; the search query filters it locally into uiState.srs.
+    private var allSrs: List<SrSummary> = emptyList()
 
     // What the error dialog's "Try again" re-runs; set alongside the errorDialog.
     private var retryAction: (() -> Unit)? = null
@@ -73,22 +77,9 @@ class TodayStatsViewModel(
         val alreadyLoaded = when (tab) {
             TodayStatsTab.MySummary -> state.summary != null
             TodayStatsTab.MyTeam -> state.team != null
-            TodayStatsTab.Sr -> state.srs.isNotEmpty()
+            TodayStatsTab.Sr -> allSrs.isNotEmpty()
         }
         if (!alreadyLoaded) loadTab(tab)
-    }
-
-    // ---------- My Summary ----------
-
-    fun onBreakdownGroupSelected(group: BreakdownGroup) {
-        if (group == _uiState.value.breakdownGroup) return
-        _uiState.update { it.copy(breakdownGroup = group, breakdown = persistentListOf()) }
-        loadBreakdown()
-    }
-
-    fun onBreakdownQueryChange(query: String) {
-        _uiState.update { it.copy(breakdownQuery = query) }
-        loadBreakdown(debounce = true)
     }
 
     // ---------- My Team ----------
@@ -127,8 +118,7 @@ class TodayStatsViewModel(
     // ---------- SR ----------
 
     fun onSrQueryChange(query: String) {
-        _uiState.update { it.copy(srQuery = query) }
-        loadSrs(debounce = true)
+        _uiState.update { it.copy(srQuery = query, srs = filterSrs(query)) }
     }
 
     fun onSrClick(srId: Int) {
@@ -151,10 +141,7 @@ class TodayStatsViewModel(
     // ---------- Loading ----------
 
     private fun loadTab(tab: TodayStatsTab) = when (tab) {
-        TodayStatsTab.MySummary -> {
-            loadSummary()
-            loadBreakdown()
-        }
+        TodayStatsTab.MySummary -> loadSummary()
         TodayStatsTab.MyTeam -> if (_uiState.value.selectedLevelKey == null) loadLevels() else loadTeam()
         TodayStatsTab.Sr -> loadSrs()
     }
@@ -163,7 +150,7 @@ class TodayStatsViewModel(
         summaryJob?.cancel()
         _uiState.update { it.copy(isSummaryLoading = true) }
         summaryJob = viewModelScope.launch {
-            when (val result = getTodayStatsOverviewUseCase(TodayStatsScope())) {
+            when (val result = getTodaySummaryUseCase()) {
                 is DataResult.Success -> _uiState.update {
                     it.copy(isSummaryLoading = false, summary = result.data.toSummaryUi())
                 }
@@ -176,34 +163,13 @@ class TodayStatsViewModel(
         }
     }
 
-    private fun loadBreakdown(debounce: Boolean = false) {
-        // A slower response for a group/query the user already left must not overwrite the new one.
-        breakdownJob?.cancel()
-        breakdownJob = viewModelScope.launch {
-            if (debounce) delay(SEARCH_DEBOUNCE_MS)
-            _uiState.update { it.copy(isBreakdownLoading = true) }
-            val state = _uiState.value
-            val result = getOrderBreakdownUseCase(state.breakdownGroup.toOrderGroupBy(), TodayStatsScope(), state.breakdownQuery)
-            when (result) {
-                is DataResult.Success -> _uiState.update {
-                    it.copy(isBreakdownLoading = false, breakdown = result.data.map { item -> item.toUi() }.toImmutableList())
-                }
-                is DataResult.Error -> {
-                    _uiState.update { it.copy(isBreakdownLoading = false) }
-                    handleError(result.error) { loadBreakdown() }
-                }
-                is DataResult.Loading -> Unit
-            }
-        }
-    }
-
     private fun loadLevels() {
         if (levelsJob?.isActive == true) return
         _uiState.update { it.copy(isLevelsLoading = true) }
         levelsJob = viewModelScope.launch {
             when (val result = getSubordinateHierarchyLevelsUseCase()) {
                 is DataResult.Success -> {
-                    val levels = result.data.levels.map { LevelChipUi(key = it.key, label = it.name) }.toImmutableList()
+                    val levels = result.data.levels.map { LevelChipUi(key = it.key, label = it.name, userLevel = it.userLevel) }.toImmutableList()
                     _uiState.update {
                         it.copy(isLevelsLoading = false, levels = levels, selectedLevelKey = levels.firstOrNull()?.key)
                     }
@@ -219,11 +185,18 @@ class TodayStatsViewModel(
     }
 
     private fun loadTeam() {
-        val levelKey = _uiState.value.selectedLevelKey ?: return
+        val state = _uiState.value
+        val levelKey = state.selectedLevelKey ?: return
         teamJob?.cancel()
+        // Without the level's numeric userLevel the API can't be called; the card area shows "No stats available".
+        val userLevel = state.levels.firstOrNull { it.key == levelKey }?.userLevel
+        if (userLevel == null) {
+            _uiState.update { it.copy(isTeamLoading = false, team = null) }
+            return
+        }
         _uiState.update { it.copy(isTeamLoading = true) }
         teamJob = viewModelScope.launch {
-            when (val result = getTodayStatsOverviewUseCase(TodayStatsScope(levelKey = levelKey))) {
+            when (val result = getTeamSummaryUseCase(userLevel)) {
                 is DataResult.Success -> _uiState.update {
                     it.copy(isTeamLoading = false, team = result.data.toTeamUi())
                 }
@@ -234,7 +207,9 @@ class TodayStatsViewModel(
                 is DataResult.Loading -> Unit
             }
         }
-        loadTeamOrders()
+        // "Product wise order status" is hidden, so its data isn't loaded. Restore this call
+        // together with ProductOrderStatusCard in MyTeamContent.
+        // loadTeamOrders()
     }
 
     private fun loadTeamOrders() {
@@ -257,64 +232,34 @@ class TodayStatsViewModel(
         }
     }
 
-    /** Reloads from page 1, replacing the list (tab open, search change, retry). */
-    private fun loadSrs(debounce: Boolean = false) {
+    /** Fetches every SR (the API has no paging or search); the current query is applied locally. */
+    private fun loadSrs() {
         srJob?.cancel()
-        // A next-page response for the old query must not append to the new list.
-        srMoreJob?.cancel()
-        _uiState.update { it.copy(isSrLoadingMore = false) }
+        _uiState.update { it.copy(isSrLoading = true) }
         srJob = viewModelScope.launch {
-            if (debounce) delay(SEARCH_DEBOUNCE_MS)
-            _uiState.update { it.copy(isSrLoading = true) }
-            when (val result = getSrStatsListUseCase(_uiState.value.srQuery, page = 1)) {
+            when (val result = getSrStatsListUseCase()) {
                 is DataResult.Success -> {
-                    val page = result.data
-                    val srs = page.items.map { sr -> sr.toUi() }.toImmutableList()
-                    _uiState.update {
-                        it.copy(
-                            isSrLoading = false,
-                            srs = srs,
-                            srPage = page.page,
-                            srHasMore = page.items.isNotEmpty() && srs.size < page.totalCount
-                        )
-                    }
+                    allSrs = result.data
+                    _uiState.update { it.copy(isSrLoading = false, srs = filterSrs(it.srQuery)) }
                 }
                 is DataResult.Error -> {
                     _uiState.update { it.copy(isSrLoading = false) }
-                    handleError(result.error) { loadSrs() }
+                    handleError(result.error, retry = ::loadSrs)
                 }
                 is DataResult.Loading -> Unit
             }
         }
     }
 
-    fun onSrLoadMore() {
-        val state = _uiState.value
-        if (!state.srHasMore || state.isSrLoading || state.isSrLoadingMore) return
-        _uiState.update { it.copy(isSrLoadingMore = true) }
-        srMoreJob = viewModelScope.launch {
-            when (val result = getSrStatsListUseCase(state.srQuery, page = state.srPage + 1)) {
-                is DataResult.Success -> {
-                    val page = result.data
-                    _uiState.update {
-                        val known = it.srs.mapTo(HashSet()) { sr -> sr.srId }
-                        val srs = (it.srs + page.items.filter { sr -> sr.srId !in known }.map { sr -> sr.toUi() })
-                            .toImmutableList()
-                        it.copy(
-                            isSrLoadingMore = false,
-                            srs = srs,
-                            srPage = page.page,
-                            srHasMore = page.items.isNotEmpty() && srs.size < page.totalCount
-                        )
-                    }
-                }
-                is DataResult.Error -> {
-                    _uiState.update { it.copy(isSrLoadingMore = false) }
-                    handleError(result.error, retry = ::onSrLoadMore)
-                }
-                is DataResult.Loading -> Unit
-            }
+    /** Matches name, SR code or contact number, case-insensitively. */
+    private fun filterSrs(query: String): ImmutableList<SrCardUi> {
+        val q = query.trim()
+        val matches = if (q.isEmpty()) allSrs else allSrs.filter {
+            it.name.contains(q, ignoreCase = true) ||
+                it.srCode.contains(q, ignoreCase = true) ||
+                it.contactNo.contains(q)
         }
+        return matches.map { it.toUi() }.toImmutableList()
     }
 
     /** One session-expired effect per screen visit; the first error's dialog (and retry) wins. */
@@ -333,22 +278,10 @@ class TodayStatsViewModel(
 
     // ---------- Mapping ----------
 
-    private fun TodayStatsOverview.toSummaryUi(): SummaryUi {
-        val att = attendance.total
-        val prod = productivity.total
-        val tgt = target.total
-        val mtd = tgt.monthToDate
-        val mtdPercent = mtd?.achievementPercent?.roundToInt() ?: 0
-        val mtdAchieved = formatTakaCompact(mtd?.achieved ?: 0.0)
-        val mtdTarget = formatTakaCompact(mtd?.target ?: 0.0)
+    private fun TodaySummary.toSummaryUi(): SummaryUi {
+        val att = attendance
+        val prod = productivity
         return SummaryUi(
-            header = AchievementHeaderUi(
-                percent = mtdPercent,
-                achieved = mtdAchieved,
-                target = mtdTarget,
-                periodLabel = mtd?.let { "Total · Month to date · Day ${it.dayOfPeriod} of ${it.daysInPeriod}" }
-                    ?: "Total · Month to date"
-            ),
             attendance = AttendanceUi(
                 totalSr = att.totalSr,
                 presentPercent = if (att.totalSr > 0) (att.present * 100f / att.totalSr).roundToInt() else 0,
@@ -374,14 +307,10 @@ class TodayStatsViewModel(
                 pCase = countText(prod.sku.pCase)
             ),
             runningTrack = RunningTrackUi(
-                achieved = mtdAchieved,
-                target = mtdTarget,
-                percent = mtdPercent,
-                expectedPercent = mtd?.expectedPercent?.roundToInt() ?: 0,
-                today = tgt.today.toTrackCard("Today"),
-                tillDate = tgt.tillDate.toTrackCard("Till date")
+                today = today.toTrackCard("Today"),
+                tillDate = tillDate.toTrackCard("Till date")
             ),
-            inventory = inventory.total.let {
+            inventory = inventory.let {
                 InventoryUi(
                     currentStockValue = formatTakaCompact(it.currentStockValue),
                     openingStock = formatTakaCompact(it.openingStockValue),
@@ -390,7 +319,7 @@ class TodayStatsViewModel(
                     currentStock = countText(it.currentStockQty)
                 )
             },
-            zeroSales = zeroSales.total.let {
+            zeroSales = outlets.let {
                 ZeroSalesUi(
                     activeOutlets = countText(it.activeOutlets),
                     zeroSalesOutlets = countText(it.zeroSalesOutlets),
@@ -429,10 +358,9 @@ class TodayStatsViewModel(
         )
     }
 
-    private fun TodayStatsOverview.toTeamUi(): TeamUi {
-        val stockByUnit = inventory.units.associate { it.unitId to it.stats.currentStockQty }
+    private fun TeamSummary.toTeamUi(): TeamUi {
         return TeamUi(
-            attendance = attendance.units.map {
+            attendance = attendance.map {
                 UnitAttendanceUi(
                     unitId = it.unitId,
                     name = it.unitName,
@@ -442,7 +370,7 @@ class TodayStatsViewModel(
                     onLeave = it.stats.onLeave
                 )
             }.toImmutableList(),
-            productivity = productivity.units.map {
+            productivity = productivity.map {
                 val call = it.stats.call
                 UnitProductivityUi(
                     unitId = it.unitId,
@@ -456,7 +384,7 @@ class TodayStatsViewModel(
                     lpc = decimalText(it.stats.sku.lpc)
                 )
             }.toImmutableList(),
-            target = target.units.map {
+            target = target.map {
                 UnitTargetUi(
                     unitId = it.unitId,
                     name = it.unitName,
@@ -464,19 +392,20 @@ class TodayStatsViewModel(
                     tillDate = it.stats.tillDate.toRow()
                 )
             }.toImmutableList(),
-            zeroSales = zeroSales.units.map {
+            // No. Order and Current Stock aren't in order-summary-by-hierarchy.
+            zeroSales = outlets.map {
                 UnitZeroSalesUi(
                     unitId = it.unitId,
                     name = it.unitName,
                     activeOutlets = countText(it.stats.activeOutlets),
                     activeSkus = countText(it.stats.activeSkus),
-                    orderCount = countText(it.stats.orderCount),
+                    orderCount = "--",
                     zeroSales = countText(it.stats.zeroSalesOutlets),
                     zeroSkus = countText(it.stats.zeroSalesSkus),
-                    currentStock = stockByUnit[it.unitId]?.let(::countText) ?: "--"
+                    currentStock = "--"
                 )
             }.toImmutableList(),
-            unitOptions = attendance.units.map { DropdownOption(it.unitId, it.unitName) }.toImmutableList()
+            unitOptions = attendance.map { DropdownOption(it.unitId, it.unitName) }.toImmutableList()
         )
     }
 
@@ -489,19 +418,16 @@ class TodayStatsViewModel(
     private fun SrSummary.toUi() = SrCardUi(
         srId = srId,
         name = name,
-        location = locationName,
-        territory = territoryName,
-        isOnline = isOnline,
-        checkIn = timeText(checkInAt),
+        designation = designation,
+        levelName = levelName,
+        // Attendance given today = online/present.
+        isOnline = attendanceAt != null,
+        checkIn = timeText(attendanceAt),
         firstOrder = timeText(firstOrderAt),
         lastOrder = timeText(lastOrderAt),
         strikeRate = percentText(strikeRate),
         productiveRate = percentText(productiveRate),
         lpc = decimalText(lpc),
-        orderAchievement = percentText(orderAchievementPercent)
+        orderAchievement = percentText(achievementPercent)
     )
-
-    private companion object {
-        const val SEARCH_DEBOUNCE_MS = 300L
-    }
 }

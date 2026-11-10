@@ -86,16 +86,8 @@ internal fun MyTeamContent(
                 TeamProductivityCard(team.productivity)
                 TeamTargetCard(team.target)
                 TeamZeroSalesCard(team.zeroSales)
-                ProductOrderStatusCard(
-                    unitOptions = team.unitOptions,
-                    group = orderGroup,
-                    unitId = orderUnitId,
-                    orders = orders,
-                    isLoading = isOrdersLoading,
-                    onGroupSelected = onOrderGroupSelected,
-                    onUnitSelected = onOrderUnitSelected,
-                    onReload = onOrdersReload
-                )
+                // "Product wise order status" (ProductOrderStatusCard) is hidden for now; its
+                // data load is also off in TodayStatsViewModel.loadTeam().
             }
         }
     }
@@ -158,7 +150,7 @@ private fun TeamProductivityCard(units: ImmutableList<UnitProductivityUi>) {
             Row {
                 LabeledValue("Strike rate", unit.strikeRate, modifier = Modifier.weight(1f))
                 LabeledValue("Productive %", unit.productivePercent, modifier = Modifier.weight(1f))
-                LabeledValue("LPSC", unit.lpc, modifier = Modifier.weight(1f))
+                LabeledValue("LPC", unit.lpc, modifier = Modifier.weight(1f))
             }
         }
     }

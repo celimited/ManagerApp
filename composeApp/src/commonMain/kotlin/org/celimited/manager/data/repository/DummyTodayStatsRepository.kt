@@ -17,16 +17,17 @@ import org.celimited.manager.model.todayStats.SectionStats
 import org.celimited.manager.model.todayStats.SkuProductivity
 import org.celimited.manager.model.todayStats.SrDetail
 import org.celimited.manager.model.todayStats.SrOrderItem
-import org.celimited.manager.model.todayStats.SrPage
+import org.celimited.manager.model.todayStats.SrOutletStatus
 import org.celimited.manager.model.todayStats.SrProfile
 import org.celimited.manager.model.todayStats.SrSummary
 import org.celimited.manager.model.todayStats.SrTarget
 import org.celimited.manager.model.todayStats.SrTimeline
 import org.celimited.manager.model.todayStats.SrWorkCounts
-import org.celimited.manager.model.todayStats.SrWorkMode
 import org.celimited.manager.model.todayStats.TargetPeriod
 import org.celimited.manager.model.todayStats.TargetStats
+import org.celimited.manager.model.todayStats.TeamSummary
 import org.celimited.manager.model.todayStats.TodayStatsScope
+import org.celimited.manager.model.todayStats.TodaySummary
 import org.celimited.manager.model.todayStats.UnitStats
 import org.celimited.manager.model.todayStats.ZeroSalesStats
 
@@ -38,6 +39,34 @@ import org.celimited.manager.model.todayStats.ZeroSalesStats
  * visibly changes the cards.
  */
 class DummyTodayStatsRepository : TodayStatsRepository {
+    override suspend fun getSummary(userId: String, userLevel: Int): DataResult<TodaySummary> {
+        val scope = TodayStatsScope()
+        val target = (getTarget(scope) as DataResult.Success).data.total
+        return DataResult.Success(
+            TodaySummary(
+                attendance = (getAttendance(scope) as DataResult.Success).data.total,
+                productivity = (getProductivity(scope) as DataResult.Success).data.total,
+                today = target.today,
+                tillDate = target.tillDate,
+                inventory = (getInventory(scope) as DataResult.Success).data.total,
+                outlets = (getZeroSales(scope) as DataResult.Success).data.total
+            )
+        )
+    }
+
+
+    /** Reuses the per-unit dummy sections for a fixed level, since the dummy has no userLevel mapping. */
+    override suspend fun getTeamSummary(userId: String, userLevel: Int): DataResult<TeamSummary> {
+        val scope = TodayStatsScope(levelKey = "TERRITORY")
+        return DataResult.Success(
+            TeamSummary(
+                attendance = (getAttendance(scope) as DataResult.Success).data.units,
+                productivity = (getProductivity(scope) as DataResult.Success).data.units,
+                target = (getTarget(scope) as DataResult.Success).data.units,
+                outlets = (getZeroSales(scope) as DataResult.Success).data.units
+            )
+        )
+    }
 
     override suspend fun getAttendance(scope: TodayStatsScope) = section(scope) { seed ->
         val total = 30 + seed * 7
@@ -145,16 +174,9 @@ class DummyTodayStatsRepository : TodayStatsRepository {
         return DataResult.Success(items.filter { search == null || it.name.contains(search, ignoreCase = true) })
     }
 
-    override suspend fun getSrList(
-        scope: TodayStatsScope,
-        search: String?,
-        page: Int,
-        pageSize: Int
-    ): DataResult<SrPage> {
+    override suspend fun getSrList(userId: String): DataResult<List<SrSummary>> {
         delay(LATENCY_MS)
-        val matches = srs.filter { search == null || it.name.contains(search, ignoreCase = true) }
-        val items = matches.drop((page - 1) * pageSize).take(pageSize)
-        return DataResult.Success(SrPage(items = items, page = page, totalCount = matches.size))
+        return DataResult.Success(srs)
     }
 
     override suspend fun getSrDetail(srId: Int): DataResult<SrDetail> {
@@ -164,27 +186,41 @@ class DummyTodayStatsRepository : TodayStatsRepository {
             SrDetail(
                 profile = SrProfile(
                     srId = srId,
+                    srCode = sr.srCode,
                     name = sr.name,
-                    designation = "Senior Sales Representative",
-                    photoUrl = null,
-                    phoneNo = "+8801712345678",
+                    designation = sr.designation,
+                    phoneNo = "01712345678",
                     whatsAppUrl = "https://wa.me/8801712345678",
-                    locationName = sr.locationName,
-                    territoryName = sr.territoryName,
-                    isOnline = sr.isOnline
+                    territoryName = "Territory",
+                    isOnline = sr.attendanceAt != null
                 ),
                 timeline = SrTimeline(
-                    loggedInAt = at(8, 45),
-                    workMode = SrWorkMode.ON_FIELD,
-                    spentMinutes = 90,
-                    hasVisited = true,
+                    attendanceAt = at(8, 45),
+                    firstVisitAt = at(9, 30),
                     firstOrderAt = at(11, 45),
                     firstOrderOutlet = "Fresh mart",
                     lastOrderAt = at(14, 45),
-                    lastOrderOutlet = "Fresh mart"
+                    lastOrderOutlet = "Fresh mart",
+                    spentHours = "1h 30m"
                 ),
-                work = SrWorkCounts(scheduled = 20, visited = 16, productive = 12, lpc = 1.24),
-                target = SrTarget(todayTarget = 20_000.0, orderValue = 16_000.0, achievementPercent = 16.0)
+                work = SrWorkCounts(
+                    scheduled = 20.0,
+                    visited = 16.0,
+                    productive = 12.0,
+                    remaining = 4.0,
+                    strikeRate = 75.0,
+                    productiveRate = 60.0,
+                    lpc = 1.24
+                ),
+                target = SrTarget(
+                    todayTarget = 20_000.0,
+                    todayOrder = 16_000.0,
+                    todayAchievement = 80.0,
+                    tillDateTarget = 400_000.0,
+                    tillDateOrder = 250_000.0,
+                    tillDateAchievement = 62.5
+                ),
+                outlets = SrOutletStatus(activeOutlets = 16, zeroSalesOutlets = 4, activeSkus = 184, zeroSalesSkus = 99)
             )
         )
     }
@@ -278,18 +314,23 @@ class DummyTodayStatsRepository : TodayStatsRepository {
     ).mapIndexed { index, (name, location) ->
         SrSummary(
             srId = index + 1,
+            srCode = "7000000${index + 1}",
             name = name,
-            photoUrl = null,
-            locationName = location,
-            territoryName = "Territory",
-            isOnline = index % 2 == 0,
-            checkInAt = at(10, 0),
+            designation = "Sales Promotion Officer",
+            contactNo = "171234567${index}",
+            levelName = location,
+            attendanceAt = if (index % 2 == 0) at(10, 0) else null,
             firstOrderAt = at(8, 45),
             lastOrderAt = at(17, 55),
+            scheduledCalls = 20.0,
+            placement = 16.0,
+            successfulMemo = 12.0,
             strikeRate = 17.54,
             productiveRate = 80.0,
+            achievementPercent = 46.0,
             lpc = 4.22,
-            orderAchievementPercent = 46.0
+            targetValue = 20_000.0,
+            orderValue = 9_200.0
         )
     }
 

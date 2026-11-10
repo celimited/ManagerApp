@@ -11,8 +11,11 @@ import org.celimited.manager.domain.repository.TodayStatsRepository
 import org.celimited.manager.model.todayStats.AttendanceStats
 import org.celimited.manager.model.todayStats.ProductivityStats
 import org.celimited.manager.model.todayStats.SectionStats
-import org.celimited.manager.model.todayStats.SrPage
+import org.celimited.manager.model.todayStats.SrDetail
+import org.celimited.manager.model.todayStats.SrSummary
+import org.celimited.manager.model.todayStats.TeamSummary
 import org.celimited.manager.model.todayStats.TodayStatsScope
+import org.celimited.manager.model.todayStats.TodaySummary
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -27,6 +30,10 @@ class TodayStatsRepositoryImpl(
     private val today: () -> LocalDate = { Clock.System.todayIn(TimeZone.currentSystemDefault()) }
 ) : TodayStatsRepository by fallback {
 
+    override suspend fun getSummary(userId: String, userLevel: Int): DataResult<TodaySummary> =
+        safeApiCall { remoteDataSource.getOrderSummary(userId, userLevel, today().toString()) }
+            .map { it.toDomain() }
+
     override suspend fun getAttendance(scope: TodayStatsScope): DataResult<SectionStats<AttendanceStats>> {
         // My Team (level rows) still uses dummy data until level/unit ids are wired up.
         if (scope.levelKey != null) return fallback.getAttendance(scope)
@@ -40,14 +47,17 @@ class TodayStatsRepositoryImpl(
             .map { it.toDomain() }
     }
 
-    override suspend fun getSrList(
-        scope: TodayStatsScope,
-        search: String?,
-        page: Int,
-        pageSize: Int
-    ): DataResult<SrPage> =
-        safeApiCall { remoteDataSource.getSrList(LEVEL_ID, UNIT_ID, today().toString(), search, page, pageSize) }
-            .map { it.toDomain(requestedPage = page) }
+    override suspend fun getTeamSummary(userId: String, userLevel: Int): DataResult<TeamSummary> =
+        safeApiCall { remoteDataSource.getTeamSummary(userId, userLevel) }
+            .map { it.toDomain() }
+
+    override suspend fun getSrList(userId: String): DataResult<List<SrSummary>> =
+        safeApiCall { remoteDataSource.getSrList(userId) }
+            .map { it.toDomain(today()) }
+
+    override suspend fun getSrDetail(srId: Int): DataResult<SrDetail> =
+        safeApiCall { remoteDataSource.getSrPerformance(srId) }
+            .map { it.toDomain(srId, today()) }
 
     private inline fun <T, R> DataResult<T>.map(transform: (T) -> R): DataResult<R> = when (this) {
         is DataResult.Success -> DataResult.Success(transform(data))

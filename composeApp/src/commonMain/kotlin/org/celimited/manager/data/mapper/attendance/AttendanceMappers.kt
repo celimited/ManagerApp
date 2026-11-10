@@ -104,7 +104,8 @@ fun SubordinateHierarchyDto.toDomain(): SubordinateHierarchy = SubordinateHierar
             key = key,
             name = dto.levelName?.takeIf { it.isNotBlank() } ?: key,
             presentCount = dto.presentCount ?: 0,
-            totalCount = dto.totalCount ?: 0
+            totalCount = dto.totalCount ?: 0,
+            userLevel = dto.userLevel
         )
     }
 )

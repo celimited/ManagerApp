@@ -75,6 +75,13 @@ import manager.composeapp.generated.resources.ic_profile_placeholder
 import manager.composeapp.generated.resources.ic_icon_attendance
 import manager.composeapp.generated.resources.ic_icon_cart
 import manager.composeapp.generated.resources.ic_icon_peoples
+import manager.composeapp.generated.resources.ic_icon_chart
+import manager.composeapp.generated.resources.ic_icon_dollar
+import manager.composeapp.generated.resources.ic_icon_money
+import manager.composeapp.generated.resources.ic_icon_target
+import androidx.compose.runtime.Immutable
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import org.celimited.manager.component.ErrorDialog
 import org.celimited.manager.component.LockedFeature
 import org.celimited.manager.component.PopupCard
@@ -91,7 +98,6 @@ fun HomeRoute(
     onAttendanceCardClick: () -> Unit,
     onTodayStatsClick: () -> Unit,
     onStockStatusClick: () -> Unit,
-    onFeatureLocked: () -> Unit,
     onLogout: () -> Unit,
     viewModel: HomeViewModel = koinViewModel()
 ){
@@ -108,7 +114,6 @@ fun HomeRoute(
                 HomeUiEffect.RequestLocationPermission -> requestLocationPermission()
                 HomeUiEffect.NavigateToTodayStats -> onTodayStatsClick()
                 HomeUiEffect.NavigateToDistributorList -> onStockStatusClick()
-                HomeUiEffect.ShowUnderDevelopment -> onFeatureLocked()
                 HomeUiEffect.NavigateToLogin -> onLogout()
             }
         }
@@ -139,11 +144,14 @@ fun HomeRoute(
             onAISalesReportClick = onAISalesReportClick,
             onTodayStatsClick = viewModel::onTodayStatsClick,
             onStockStatusClick = viewModel::onStockStatusClick,
-            onLockedFeatureClick = viewModel::onLockedFeatureClick,
+            // Locked features ignore taps; no "under development" message.
+            onLockedFeatureClick = {},
             onLogoutClick = viewModel::onLogoutClick,
             userName = uiState.userName,
             userRole = uiState.userRole,
-            attendanceCard = uiState.attendanceCard
+            attendanceCard = uiState.attendanceCard,
+            todayOrder = uiState.todayOrder,
+            mtdPerformance = uiState.mtdPerformance
         )
     }
 
@@ -172,7 +180,9 @@ fun HomeScreen(
     onLogoutClick: () -> Unit,
     userName: String,
     userRole: String,
-    attendanceCard: AttendanceCardUi
+    attendanceCard: AttendanceCardUi,
+    todayOrder: TodayOrderUi,
+    mtdPerformance: MtdPerformanceUi
 ) {
 
     TopBackground()
@@ -187,7 +197,6 @@ fun HomeScreen(
             onLockedFeatureClick = onLockedFeatureClick,
             onLogoutClick = onLogoutClick
         )
-        PendingApprovalsSection()
 
         Column(
             modifier = Modifier
@@ -201,10 +210,10 @@ fun HomeScreen(
                 onAttendanceCardClick = onAttendanceCardClick,
                 onGiveAttendanceClick = onGiveAttendanceClick
             )
-            WorkPlanSection(onLockedFeatureClick = onLockedFeatureClick)
-            TodayStatsSection(onArrowClick = onTodayStatsClick)
-            MTDPerformanceSection(onLockedFeatureClick = onLockedFeatureClick)
-            StockStatusSection(onArrowClick = onStockStatusClick)
+            // Work Plan, Pending Approvals and Stock Status are hidden for now.
+            TodayStatsSection(todayOrder = todayOrder, onArrowClick = onTodayStatsClick)
+            MTDPerformanceSection(data = mtdPerformance, onLockedFeatureClick = onLockedFeatureClick)
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
@@ -844,7 +853,13 @@ fun WorkPlanSection(onLockedFeatureClick: () -> Unit) {
     }
 }
 
-data class TodayStat(
+private val StatCardBorder = Color(0xFFCBBFFF)
+private val StatValueColor = Color(0xFF582FFF)
+private val StatIconColor = Color(0xFF3A3A3A)
+
+/** One small card in a home stat row; [label] doubles as its LazyRow key. */
+@Immutable
+private data class StatCardItem(
     val icon: DrawableResource,
     val label: String,
     val value: String
@@ -852,15 +867,17 @@ data class TodayStat(
 
 @Composable
 fun TodayStatsSection(
+    todayOrder: TodayOrderUi,
     onArrowClick: () -> Unit = {}
 ) {
-
-    val stats = remember {
-        listOf(
-            TodayStat(Res.drawable.ic_icon_attendance, "Attendance", "12%"),
-            TodayStat(Res.drawable.ic_icon_cart, "Order started", "30%"),
-            TodayStat(Res.drawable.ic_icon_cart, "Order", "30%"),
-            TodayStat(Res.drawable.ic_icon_peoples, "Idle SR", "35%")
+    val stats = remember(todayOrder) {
+        persistentListOf(
+            StatCardItem(Res.drawable.ic_icon_attendance, "Attendance", todayOrder.attendance),
+            StatCardItem(Res.drawable.ic_icon_cart, "Order started", todayOrder.orderStarted),
+            StatCardItem(Res.drawable.ic_icon_peoples, "Idle SR", todayOrder.idleSr),
+            StatCardItem(Res.drawable.ic_icon_target, "Call Productivity", todayOrder.callProductivity),
+            StatCardItem(Res.drawable.ic_icon_location, "Visit Productivity", todayOrder.visitProductivity),
+            StatCardItem(Res.drawable.ic_icon_dollar, "LPC", todayOrder.lpc)
         )
     }
 
@@ -874,71 +891,97 @@ fun TodayStatsSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = " Today's Stats",
+                text = "Today's Order",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF2D1B69)
             )
             Spacer(modifier = Modifier.weight(1f))
             SectionArrowButton(
-                contentDescription = "Open Today's Stats",
+                contentDescription = "Open Today's Order",
                 onClick = onArrowClick
             )
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(stats) { stat ->
-                TodayStatCard(stat)
-            }
+        StatCardRow(stats = stats, valueFirst = true)
+    }
+}
+
+@Composable
+private fun StatCardRow(stats: ImmutableList<StatCardItem>, valueFirst: Boolean) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        items(stats, key = { it.label }) { stat ->
+            StatCard(stat, valueFirst)
+        }
+    }
+}
+
+/**
+ * Today's Order cards show icon → value → label ([valueFirst]); the MTD metric cards show
+ * icon → label → value.
+ */
+@Composable
+private fun StatCard(stat: StatCardItem, valueFirst: Boolean) {
+    Column(
+        modifier = Modifier
+            .width(110.dp)
+            .height(100.dp)
+            .border(
+                width = 1.dp,
+                color = StatCardBorder,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.White)
+            .padding(12.dp)
+    ) {
+        Icon(
+            painter = painterResource(stat.icon),
+            contentDescription = null,
+            tint = if (valueFirst) StatIconColor else StatValueColor,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        if (valueFirst) {
+            StatValue(stat.value)
+            Spacer(modifier = Modifier.height(4.dp))
+            StatLabel(stat.label)
+        } else {
+            StatLabel(stat.label)
+            Spacer(modifier = Modifier.height(4.dp))
+            StatValue(stat.value)
         }
     }
 }
 
 @Composable
-private fun TodayStatCard(stat: TodayStat) {
-    Box(
-        modifier = Modifier
-            .width(110.dp)
-            .border(
-                width = 1.dp,
-                color = Color(0xFFE0DCEF),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
-            .padding(12.dp)
-    ) {
-        Column {
-            Icon(
-                painter = painterResource(stat.icon),
-                contentDescription = null,
-                tint = Color(0xFF2D1B69),
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = stat.label,
-                fontSize = 12.sp,
-                color = Color.DarkGray,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = stat.value,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF4B2AC4)
-            )
-        }
-    }
+private fun StatValue(value: String) {
+    Text(
+        text = value,
+        fontSize = 17.sp,
+        fontWeight = FontWeight.Bold,
+        color = StatValueColor,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
 }
 
+@Composable
+private fun StatLabel(label: String) {
+    Text(
+        text = label,
+        fontSize = 12.sp,
+        lineHeight = 14.sp,
+        color = Color.Black,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis
+    )
+}
 
 data class WorkPlanDay(
     val date: Int,
@@ -949,18 +992,20 @@ data class WorkPlanDay(
 
 @Composable
 fun MTDPerformanceSection(
-    data: MTDPerformanceData = MTDPerformanceData(
-        mtdAchievedPercent = 30,
-        ytdAchievedPercent = 25,
-        tillDateTargetPercent = 12,
-        mtdGrowthPercent = 10,
-        ytdGrowthPercent = 10,
-        m2mGrowthPercent = 10,
-        ytdGrowthIsPositive = false
-    ),
+    data: MtdPerformanceUi,
     onArrowClick: () -> Unit = {},
     onLockedFeatureClick: () -> Unit
 ) {
+    val metrics = remember(data) {
+        persistentListOf(
+            StatCardItem(Res.drawable.ic_icon_target, "Strike Rate", data.strikeRate),
+            StatCardItem(Res.drawable.ic_icon_dollar, "LPC", data.lpc),
+            StatCardItem(Res.drawable.ic_icon_money, "MTD Sales Value", data.mtdSalesValue),
+            StatCardItem(Res.drawable.ic_icon_chart, "YTD Sales Value", data.ytdSalesValue),
+            StatCardItem(Res.drawable.ic_icon_cart, "Order vs Delivery", data.orderVsDelivery),
+            StatCardItem(Res.drawable.ic_icon_trending_up, "Coverage", data.coverage)
+        )
+    }
 
     LockedFeature(
         locked = Feature.MtdPerformance.isLocked,
@@ -1009,62 +1054,53 @@ fun MTDPerformanceSection(
 
                     MetricProgressRow(
                         label = "MTD Achieved",
-                        percent = data.mtdAchievedPercent,
+                        value = data.mtdAchieved,
+                        progress = data.mtdAchievedProgress,
                         progressColor = Color(0xFFFF7A00)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
                     MetricProgressRow(
                         label = "YTD Achieved",
-                        percent = data.ytdAchievedPercent,
+                        value = data.ytdAchieved,
+                        progress = data.ytdAchievedProgress,
                         progressColor = Color(0xFFFFB800)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    // An amount, not a percent — so no progress bar.
                     MetricProgressRow(
                         label = "Till Date Target",
-                        percent = data.tillDateTargetPercent,
+                        value = data.tillDateTarget,
+                        progress = null,
                         progressColor = Color(0xFFFF4D6D)
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Bottom pill badges
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        GrowthPill(
-                            label = "MTD",
-                            percent = data.mtdGrowthPercent,
-                            isPositive = true,
-                            backgroundColor = Color(0xFFE3F7E9),
-                            contentColor = Color(0xFF1E9E4A)
-                        )
-                        GrowthPill(
-                            label = "YTD",
-                            percent = data.ytdGrowthPercent,
-                            isPositive = data.ytdGrowthIsPositive,
-                            backgroundColor = Color(0xFFFFF9DB),
-                            contentColor = Color(0xFF9E7C1E)
-                        )
-                        GrowthPill(
-                            label = "M2M",
-                            percent = data.m2mGrowthPercent,
-                            isPositive = true,
-                            backgroundColor = Color(0xFFE3F7E9),
-                            contentColor = Color(0xFF1E9E4A)
-                        )
+                        GrowthPill(label = "MTD", growth = data.mtdGrowth)
+                        GrowthPill(label = "YTD", growth = data.ytdGrowth)
+                        GrowthPill(label = "M2M", growth = data.m2mGrowth)
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            StatCardRow(stats = metrics, valueFirst = false)
         }
     }
 }
 
+/** [progress] is 0–100; null hides the bar (for rows that show an amount). */
 @Composable
 private fun MetricProgressRow(
     label: String,
-    percent: Int,
+    value: String,
+    progress: Float?,
     progressColor: Color
 ) {
     Column {
@@ -1074,33 +1110,40 @@ private fun MetricProgressRow(
         ) {
             Text(text = label, fontSize = 13.sp, color = Color.DarkGray)
             Text(
-                text = "$percent%",
+                text = value,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.Black
             )
         }
-        Spacer(modifier = Modifier.height(6.dp))
-        LinearProgressIndicator(
-            progress = { percent / 100f },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(50)),
-            color = progressColor,
-            trackColor = Color(0xFFEDEDED),
-        )
+        if (progress != null) {
+            Spacer(modifier = Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = { progress / 100f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(50)),
+                color = progressColor,
+                trackColor = Color(0xFFEDEDED),
+            )
+        }
     }
 }
 
+private val GrowthUpBackground = Color(0xFFE3F7E9)
+private val GrowthUpContent = Color(0xFF1E9E4A)
+private val GrowthDownBackground = Color(0xFFFFF9DB)
+private val GrowthDownContent = Color(0xFF9E7C1E)
+
+/** Green with an up arrow for growth ≥ 0, yellow with a down arrow when negative. */
 @Composable
 private fun GrowthPill(
     label: String,
-    percent: Int,
-    isPositive: Boolean,
-    backgroundColor: Color,
-    contentColor: Color
+    growth: GrowthUi
 ) {
+    val backgroundColor = if (growth.isPositive) GrowthUpBackground else GrowthDownBackground
+    val contentColor = if (growth.isPositive) GrowthUpContent else GrowthDownContent
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -1109,14 +1152,16 @@ private fun GrowthPill(
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
         Icon(
-            painter = if (isPositive) painterResource(Res.drawable.ic_icon_trending_up) else painterResource(Res.drawable.ic_icon_trending_down),
-            contentDescription = null,
+            painter = painterResource(
+                if (growth.isPositive) Res.drawable.ic_icon_trending_up else Res.drawable.ic_icon_trending_down
+            ),
+            contentDescription = if (growth.isPositive) "Up" else "Down",
             tint = contentColor,
             modifier = Modifier.size(14.dp)
         )
         Spacer(modifier = Modifier.width(4.dp))
         Text(
-            text = "$label $percent%",
+            text = "$label ${growth.value}",
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             color = contentColor
@@ -1239,16 +1284,6 @@ private fun StockStatusCard(
     }
 }
 
-data class MTDPerformanceData(
-    val mtdAchievedPercent: Int,
-    val ytdAchievedPercent: Int,
-    val tillDateTargetPercent: Int,
-    val mtdGrowthPercent: Int,
-    val ytdGrowthPercent: Int,
-    val m2mGrowthPercent: Int,
-    val ytdGrowthIsPositive: Boolean = false // controls arrow direction on the YTD pill
-)
-
 @Composable
 @Preview(showBackground = true, showSystemUi = true)
 private fun HomeScreenPreview() {
@@ -1269,7 +1304,13 @@ private fun HomeScreenPreview() {
             onLogoutClick = {},
             userName = "John Doe",
             userRole = "Area Manager",
-            attendanceCard = AttendanceCardUi.NotGiven
+            attendanceCard = AttendanceCardUi.NotGiven,
+            todayOrder = TodayOrderUi(attendance = "60/75", orderStarted = "12", idleSr = "2"),
+            mtdPerformance = MtdPerformanceUi(
+                mtdAchievedProgress = 60f,
+                mtdAchieved = "60%",
+                ytdGrowth = GrowthUi(value = "10%", isPositive = false)
+            )
         )
     }
 }

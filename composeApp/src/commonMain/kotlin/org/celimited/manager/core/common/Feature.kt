@@ -14,7 +14,7 @@ enum class Feature(val isAvailable: Boolean) {
     // Home
     PendingApprovals(false),
     WorkPlan(false),
-    MtdPerformance(false),
+    MtdPerformance(true),
     Notifications(false),
 
     // Distributor details

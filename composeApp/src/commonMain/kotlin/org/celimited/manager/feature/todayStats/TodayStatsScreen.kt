@@ -24,19 +24,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.collections.immutable.ImmutableList
-import kotlinx.collections.immutable.toImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import manager.composeapp.generated.resources.Res
 import manager.composeapp.generated.resources.ic_icon_box
 import manager.composeapp.generated.resources.ic_icon_clock
@@ -48,8 +46,6 @@ import manager.composeapp.generated.resources.ic_icon_warning
 import org.celimited.manager.component.ErrorDialog
 import org.celimited.manager.component.TopBar
 import org.koin.compose.viewmodel.koinViewModel
-
-private val BreakdownGroups: ImmutableList<BreakdownGroup> = BreakdownGroup.entries.toImmutableList()
 
 @Composable
 fun TodayStatsRoute(
@@ -73,12 +69,42 @@ fun TodayStatsRoute(
         }
     }
 
+    TodayStatsScreen(
+        uiState = uiState,
+        onBackClick = onBackClick,
+        onTabSelected = viewModel::onTabSelected,
+        onLevelSelected = viewModel::onLevelSelected,
+        onTeamOrderGroupSelected = viewModel::onTeamOrderGroupSelected,
+        onTeamOrderUnitSelected = viewModel::onTeamOrderUnitSelected,
+        onTeamOrdersReload = viewModel::onTeamOrdersReload,
+        onSrQueryChange = viewModel::onSrQueryChange,
+        onSrClick = viewModel::onSrClick,
+        onDismissError = viewModel::onDismissError,
+        onRetry = viewModel::onRetry
+    )
+}
+
+/** Stateless screen: renders [uiState] only, so it can be previewed without a ViewModel. */
+@Composable
+fun TodayStatsScreen(
+    uiState: TodayStatsUiState,
+    onBackClick: () -> Unit,
+    onTabSelected: (TodayStatsTab) -> Unit,
+    onLevelSelected: (String) -> Unit,
+    onTeamOrderGroupSelected: (BreakdownGroup) -> Unit,
+    onTeamOrderUnitSelected: (Int) -> Unit,
+    onTeamOrdersReload: () -> Unit,
+    onSrQueryChange: (String) -> Unit,
+    onSrClick: (Int) -> Unit,
+    onDismissError: () -> Unit,
+    onRetry: () -> Unit
+) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             TopBar(
-                title = "Today's Stats",
+                title = "Today's Order",
                 onBackClick = onBackClick
             )
         }
@@ -89,19 +115,13 @@ fun TodayStatsRoute(
                 .padding(padding)
         ) {
             Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                TopTabs(selected = uiState.selectedTab, onSelect = viewModel::onTabSelected)
+                TopTabs(selected = uiState.selectedTab, onSelect = onTabSelected)
             }
             Box(Modifier.weight(1f)) {
                 when (uiState.selectedTab) {
                     TodayStatsTab.MySummary -> MySummaryContent(
                         summary = uiState.summary,
-                        isSummaryLoading = uiState.isSummaryLoading,
-                        breakdownGroup = uiState.breakdownGroup,
-                        breakdownQuery = uiState.breakdownQuery,
-                        breakdown = uiState.breakdown,
-                        isBreakdownLoading = uiState.isBreakdownLoading,
-                        onBreakdownGroupSelected = viewModel::onBreakdownGroupSelected,
-                        onBreakdownQueryChange = viewModel::onBreakdownQueryChange
+                        isSummaryLoading = uiState.isSummaryLoading
                     )
                     TodayStatsTab.MyTeam -> MyTeamContent(
                         levels = uiState.levels,
@@ -112,19 +132,17 @@ fun TodayStatsRoute(
                         orderUnitId = uiState.teamOrderUnitId,
                         orders = uiState.teamOrders,
                         isOrdersLoading = uiState.isTeamOrdersLoading,
-                        onLevelSelected = viewModel::onLevelSelected,
-                        onOrderGroupSelected = viewModel::onTeamOrderGroupSelected,
-                        onOrderUnitSelected = viewModel::onTeamOrderUnitSelected,
-                        onOrdersReload = viewModel::onTeamOrdersReload
+                        onLevelSelected = onLevelSelected,
+                        onOrderGroupSelected = onTeamOrderGroupSelected,
+                        onOrderUnitSelected = onTeamOrderUnitSelected,
+                        onOrdersReload = onTeamOrdersReload
                     )
                     TodayStatsTab.Sr -> SrListContent(
                         query = uiState.srQuery,
                         items = uiState.srs,
                         isLoading = uiState.isSrLoading,
-                        isLoadingMore = uiState.isSrLoadingMore,
-                        onQueryChange = viewModel::onSrQueryChange,
-                        onSrClick = viewModel::onSrClick,
-                        onLoadMore = viewModel::onSrLoadMore
+                        onQueryChange = onSrQueryChange,
+                        onSrClick = onSrClick
                     )
                 }
             }
@@ -132,7 +150,7 @@ fun TodayStatsRoute(
     }
 
     uiState.errorDialog?.let { error ->
-        ErrorDialog(message = error.message, onClose = viewModel::onDismissError, onRetry = viewModel::onRetry)
+        ErrorDialog(message = error.message, onClose = onDismissError, onRetry = onRetry)
     }
 }
 
@@ -141,17 +159,8 @@ fun TodayStatsRoute(
 @Composable
 private fun MySummaryContent(
     summary: SummaryUi?,
-    isSummaryLoading: Boolean,
-    breakdownGroup: BreakdownGroup,
-    breakdownQuery: String,
-    breakdown: ImmutableList<BreakdownItemUi>,
-    isBreakdownLoading: Boolean,
-    onBreakdownGroupSelected: (BreakdownGroup) -> Unit,
-    onBreakdownQueryChange: (String) -> Unit
+    isSummaryLoading: Boolean
 ) {
-    // Pure view state: whether the search box is open. Kept open while a query is active.
-    var isSearchOpen by rememberSaveable { mutableStateOf(breakdownQuery.isNotEmpty()) }
-
     LazyColumn(
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -161,7 +170,6 @@ private fun MySummaryContent(
                 if (isSummaryLoading) LoadingBox() else EmptyText("No stats available")
             }
         } else {
-            item(key = "header") { AchievementHeaderCard(summary.header) }
             item(key = "attendance") { AttendanceCard(summary.attendance) }
             item(key = "call") { CallProductivityCard(summary.call) }
             item(key = "sku") { SkuProductivityCard(summary.sku) }
@@ -171,66 +179,6 @@ private fun MySummaryContent(
             if (summary.keyMetrics.isNotEmpty()) {
                 item(key = "key_metrics") { KeyMetricsCard(summary.keyMetrics) }
             }
-        }
-
-        item(key = "breakdown_tabs") {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    PillChips(
-                        options = BreakdownGroups,
-                        selected = breakdownGroup,
-                        label = { it.label },
-                        onSelect = onBreakdownGroupSelected,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    SearchToggleButton(active = isSearchOpen) {
-                        if (isSearchOpen && breakdownQuery.isNotEmpty()) onBreakdownQueryChange("")
-                        isSearchOpen = !isSearchOpen
-                    }
-                }
-                if (isSearchOpen) {
-                    SearchField(breakdownQuery, "Search ${breakdownGroup.label}", onBreakdownQueryChange)
-                }
-            }
-        }
-
-        when {
-            breakdown.isEmpty() && isBreakdownLoading -> item(key = "breakdown_loading") { LoadingBox() }
-            breakdown.isEmpty() -> item(key = "breakdown_empty") { EmptyText("No orders found") }
-            else -> items(breakdown, key = { "breakdown_${it.id}" }) { BreakdownCard(it) }
-        }
-    }
-}
-
-@Composable
-private fun AchievementHeaderCard(header: AchievementHeaderUi) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        PercentRing(percent = header.percent, color = Accent, size = 76.dp, strokeWidth = 8.dp) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("${header.percent}%", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TitleColor)
-                Text("Achievement", fontSize = 8.sp, color = SubtleText)
-            }
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(header.periodLabel, fontSize = 11.sp, color = SubtleText, maxLines = 2)
-            Spacer(Modifier.height(4.dp))
-            Text(header.achieved, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TitleColor, maxLines = 1)
-            Text("Sales", fontSize = 12.sp, color = SubtleText)
-        }
-        Column(horizontalAlignment = Alignment.End) {
-            Text("Target", fontSize = 11.sp, color = SubtleText)
-            Spacer(Modifier.height(2.dp))
-            Text(header.target, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TitleColor, maxLines = 1)
         }
     }
 }
@@ -300,27 +248,8 @@ private fun RunningTrackCard(track: RunningTrackUi) {
     StatsCard(
         icon = Res.drawable.ic_icon_trending_up,
         title = "Running Track",
-        subtitle = "Month to date"
+        subtitle = "Today vs till date"
     ) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.weight(1f)) {
-                Text("Achieved MTD", fontSize = 12.sp, color = SubtleText)
-                Spacer(Modifier.height(2.dp))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(track.achieved, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TitleColor)
-                    Text("  of ${track.target}", fontSize = 12.sp, color = SubtleText, modifier = Modifier.padding(bottom = 2.dp))
-                }
-            }
-            Text("${track.percent}%", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Accent)
-        }
-        Spacer(Modifier.height(8.dp))
-        ProgressBar(track.percent.toProgress(), Accent, height = 8.dp)
-        Spacer(Modifier.height(6.dp))
-        Row {
-            Text("${track.percent}% achievement", fontSize = 11.sp, color = SubtleText, modifier = Modifier.weight(1f))
-            Text("Expected by today: ${track.expectedPercent}%", fontSize = 11.sp, color = SubtleText)
-        }
-        Spacer(Modifier.height(12.dp))
         TileRow {
             TrackCard(track.today, Green, tileModifier())
             TrackCard(track.tillDate, Orange, tileModifier())
@@ -449,5 +378,52 @@ internal fun CardDivider() {
             .padding(vertical = 12.dp)
             .height(1.dp)
             .background(CardBorder)
+    )
+}
+
+@Composable
+@Preview(showBackground = true, showSystemUi = true)
+private fun TodayStatsScreenPreview() {
+    TodayStatsScreen(
+        uiState = TodayStatsUiState(
+            summary = SummaryUi(
+                attendance = AttendanceUi(
+                    totalSr = 48, presentPercent = 88, present = 42, absent = 4, onLeave = 2,
+                    visited = 40, productive = 35, idle = 3, active = 39
+                ),
+                call = CallProductivityUi(
+                    scheduled = "820", visited = "740", productive = "610", remaining = "80",
+                    strikeRate = 82, productiveRate = 74
+                ),
+                sku = SkuProductivityUi(lpc = "3.4", tlsd = "2,074", pCase = "1,150"),
+                runningTrack = RunningTrackUi(
+                    today = TrackCardUi("Today", "26 Oct", "৳ 57K", "৳ 49K", 86),
+                    tillDate = TrackCardUi("Till Date", "1–26 Oct", "৳ 14.9L", "৳ 12.4L", 83)
+                ),
+                inventory = InventoryUi(
+                    currentStockValue = "৳ 8.2L", openingStock = "৳ 9.0L",
+                    dbCount = "6", outOfStock = "12", currentStock = "3,420"
+                ),
+                zeroSales = ZeroSalesUi(
+                    activeOutlets = "1,240", zeroSalesOutlets = "86",
+                    activeSkus = "142", zeroSalesSkus = "9"
+                ),
+                keyMetrics = persistentListOf(
+                    KeyMetricUi("৳ 2.1K", null, "Avg Memo"),
+                    KeyMetricUi("610", null, "Memos"),
+                    KeyMetricUi("12", "%", "Growth")
+                )
+            )
+        ),
+        onBackClick = {},
+        onTabSelected = {},
+        onLevelSelected = {},
+        onTeamOrderGroupSelected = {},
+        onTeamOrderUnitSelected = {},
+        onTeamOrdersReload = {},
+        onSrQueryChange = {},
+        onSrClick = {},
+        onDismissError = {},
+        onRetry = {}
     )
 }

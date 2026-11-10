@@ -7,5 +7,6 @@ data class AuthUser(
     val phone: String,
     val profilePictureUrl: String,
     val role: String,
+    val userLevel: Int,
     val status: String
 )

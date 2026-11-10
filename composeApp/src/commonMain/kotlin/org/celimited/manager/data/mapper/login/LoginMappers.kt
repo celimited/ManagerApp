@@ -21,6 +21,7 @@ fun UserDto.toDomain(): AuthUser = AuthUser(
     phone = phone.orEmpty(),
     profilePictureUrl = profilePictureUrl.orEmpty(),
     role = role.orEmpty(),
+    userLevel = userLevel ?: 0,
     status = status.orEmpty()
 )
 

@@ -70,16 +70,9 @@ class DistributorDetailViewModel(
     }
 
     fun onTabSelected(tab: DistributorDetailTab) {
-        if (tab.isLocked) {
-            onLockedFeatureClick()
-            return
-        }
+        // Locked tabs ignore taps; no "under development" message.
+        if (tab.isLocked) return
         _uiState.update { it.copy(selectedTab = tab) }
-    }
-
-    /** Tap on an action or tab that isn't built yet. */
-    fun onLockedFeatureClick() {
-        viewModelScope.launch { _uiEffect.send(DistributorDetailUiEffect.ShowUnderDevelopment) }
     }
 
     fun onRetry() {
