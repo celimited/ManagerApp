@@ -1,0 +1,8 @@
+// Settings shared by the Test and Live configurations.
+#include "Version.xcconfig"
+
+TEAM_ID=
+
+// Binary/module name. Keep it the same for both; the home-screen name is APP_DISPLAY_NAME.
+PRODUCT_NAME=ManageEsae
+INFOPLIST_KEY_CFBundleDisplayName=$(APP_DISPLAY_NAME)

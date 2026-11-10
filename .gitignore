@@ -18,3 +18,9 @@ captures
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
 /.idea
+
+# Release signing: never commit keys or their passwords (see docs/RELEASE.md)
+keystore/
+*.jks
+*.keystore
+keystore.properties

@@ -1,0 +1,10 @@
+// Live server build: the only one submitted to the App Store.
+// Base URL must match the `live` flavor in composeApp/build.gradle.kts.
+#include "Common.xcconfig"
+
+APP_DISPLAY_NAME=ManageEsae
+APP_ENVIRONMENT=LIVE
+// Same effective bundle ID the project had before (TEAM_ID was empty). Confirm it matches App Store Connect.
+PRODUCT_BUNDLE_IDENTIFIER=org.celimited.manager.Manager
+// `//` starts a comment in xcconfig, hence `/$()/`.
+API_BASE_URL=https:/$()/syngentawebapp.azurewebsites.net/SupervisorApp/api/v1/

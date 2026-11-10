@@ -12,5 +12,5 @@ val networkModule = module {
             isLenient = true
         }
     }
-    single<HttpClient> { createHttpClient(engine = get(), json = get()) }
+    single<HttpClient> { createHttpClient(engine = get(), json = get(), config = get()) }
 }
