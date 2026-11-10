@@ -1,18 +1,17 @@
 # Releasing ManagerApp (Android + iOS)
 
-One shared app for every client. It has two installable builds:
+**One app for every client** (Syngenta now; AKG, Coke, Arla later): one Play Store listing, one App Store
+listing. Builds differ only by **environment**, never by client. A flavor per client would make a separate
+app.
 
-| | Android flavor | iOS config / scheme | App ID | Name | Server | Goes to |
+| | Android variants | iOS config / scheme | App ID | Name | Base URL | Goes to |
 |---|---|---|---|---|---|---|
-| **Test** | `stage` | `Debug-Test` / `Release-Test` | `org.celimited.manager.test` (Android), `org.celimited.manager.Manager.test` (iOS) | ManageEsae Test | `http://210.4.65.222/…` | Testers (APK), TestFlight |
-| **Live** | `live` | `Debug-Live` / `Release-Live` | `org.celimited.manager` (Android), `org.celimited.manager.Manager` (iOS) | ManageEsae | `https://syngentawebapp.azurewebsites.net/…` | Play Store, App Store |
+| **Dev** | `devDebug` (default), `devRelease` | `Debug-Test` / `Release-Test` | `org.celimited.manager.dev` (Android), `org.celimited.manager.Manager.dev` (iOS) | ManageEsae Dev | `http://210.4.65.222/SupervisorApp/api/v1/` | Testers (APK), TestFlight |
+| **Prod** | `prodDebug`, `prodRelease` | `Debug-Live` / `Release-Live` | `org.celimited.manager` (Android), `org.celimited.manager.Manager` (iOS) | ManageEsae | `https://syngentawebapp.azurewebsites.net/SupervisorApp/api/v1/` | Play Store, App Store |
 
-Base URLs live in two places that must match:
-- Android: `productFlavors` in `composeApp/build.gradle.kts`.
-- iOS: `iosApp/Configuration/{Test,Live}.xcconfig`.
-
-Shared code reads the URL only through `AppConfig`
-(`composeApp/src/commonMain/kotlin/org/celimited/manager/core/common/AppConfig.kt`).
+Both URLs live in one place for both platforms: `EnvironmentBaseUrlProvider` in
+`composeApp/src/commonMain/kotlin/org/celimited/manager/core/network/BaseUrlProvider.kt`. The build only
+says which environment it is: `BuildConfig.ENVIRONMENT` on Android, `APP_ENVIRONMENT` on iOS.
 
 ## Version
 - Single source: `version.properties`, using MAJOR.MINOR.PATCH plus a build number that only ever goes up.
@@ -30,15 +29,16 @@ Shared code reads the URL only through `AppConfig`
 1. On `main`, with everything merged: `./gradlew bumpVersion -Pbump=<type>`.
 2. `git commit -am "release X.Y.Z"` and `git tag vX.Y.Z`.
 3. **Test builds**:
-   - Android: `./gradlew :composeApp:assembleStageRelease`. Send
-     `composeApp/build/outputs/apk/stage/release/*.apk` to testers.
+   - Android: `./gradlew :composeApp:assembleDevRelease`. Send
+     `composeApp/build/outputs/apk/dev/release/*.apk` to testers.
    - iOS: in Xcode, run Product ▸ Archive with the **ManagerApp Test** scheme, then upload to TestFlight
-     (the "ManageEsae Test" App Store Connect record).
+     (the "ManageEsae Dev" App Store Connect record).
 4. Get sign-off from testers on the test server.
 5. **Live builds** from the same commit:
-   - Android: `./gradlew :composeApp:bundleLiveRelease`. Upload
-     `composeApp/build/outputs/bundle/liveRelease/*.aab` to the Play Console.
-   - iOS: Archive with the **ManagerApp Live** scheme, upload, and submit for review.
+   - Android: `./gradlew :composeApp:bundleProdRelease`. Upload
+     `composeApp/build/outputs/bundle/prodRelease/*.aab` to the Play Console.
+   - iOS: Archive with the **ManagerApp Live** scheme, upload, and submit for review. In the review notes,
+     give Apple a working demo account on the live server (and, once one exists, the company code).
 6. `git push && git push --tags`.
 
 **Hotfix:**
@@ -78,14 +78,24 @@ The xcconfigs are in place. The Xcode project still needs these steps, which can
    Archive = `Release-Live`). Tick **Shared** on both.
 4. Set `TEAM_ID` in `Common.xcconfig`.
 5. Check that `PRODUCT_BUNDLE_IDENTIFIER` in `Live.xcconfig` matches the App Store Connect app. Register the
-   `.test` bundle ID and create the TestFlight-only "ManageEsae Test" record.
+   `.dev` bundle ID and create the TestFlight-only "ManageEsae Dev" record.
 6. Optional: the insecure-HTTP exception for `210.4.65.222` (App Transport Security, ATS) in `Info.plist` is
    only needed by Test. To keep it out of Live, give the `*-Test` configurations their own Info plist file.
 
 Until step 1–2 is done, `Config.xcconfig` includes `Live.xcconfig`, so the existing Debug/Release
 configurations build Live.
 
-## Adding another client later
-This is one app for every client, so no new flavor or store listing is needed. When the way to pick a client
-is decided (company code, lookup API, etc.), change only how `AppConfig.baseUrl` is produced. Feature code
-never sees the URL.
+## Adding a client / future server options
+Adding a client never needs a new flavor or a new store listing. The app needs a way to know **which**
+client a user belongs to, because login only sends `loginId` + `password`. Every option below only replaces
+the `BaseUrlProvider` bound in `core/di/NetworkModule.kt`, plus a small screen for A and B. Ktor reads the
+provider on every request, so switching clients at runtime works without rebuilding the HTTP client.
+
+The two directions under consideration:
+
+| Option | Mobile work | Server work |
+|---|---|---|
+| **Company code** | One-time "Company code" screen; the app saves the code. A new `BaseUrlProvider` returns that company's URL, either from a lookup or from a list | A lookup (static JSON or tiny endpoint), or nothing if the list ships in the app |
+| **API gateway** | `EnvironmentBaseUrlProvider` stays (dev/prod gateway URLs) + a client header on every request | Gateway (e.g. Azure API Management / Front Door) routing each client to its server |
+
+Until one is chosen, the app talks to the single dev/prod server above.

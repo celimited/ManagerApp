@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Stage only: the test server is plain HTTP. -->
+<!-- dev flavor only: the test server is plain HTTP. -->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">210.4.65.222</domain>

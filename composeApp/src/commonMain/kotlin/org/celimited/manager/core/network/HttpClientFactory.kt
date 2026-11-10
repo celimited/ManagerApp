@@ -13,16 +13,21 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import org.celimited.manager.core.common.AppConfig
-import org.celimited.manager.core.common.AppEnvironment
+import org.celimited.manager.core.common.ServerEnvironment
 
-fun createHttpClient(engine: HttpClientEngine, json: Json, config: AppConfig): HttpClient =
+fun createHttpClient(
+    engine: HttpClientEngine,
+    json: Json,
+    config: AppConfig,
+    baseUrlProvider: BaseUrlProvider
+): HttpClient =
     HttpClient(engine) {
         install(ContentNegotiation) {
             json(json)
         }
         install(Logging) {
             // Don't log API payloads in store builds.
-            level = if (config.environment == AppEnvironment.LIVE) LogLevel.NONE else LogLevel.INFO
+            level = if (config.environment == ServerEnvironment.LIVE) LogLevel.NONE else LogLevel.INFO
         }
         install(HttpTimeout) {
             requestTimeoutMillis = 90_000
@@ -30,7 +35,8 @@ fun createHttpClient(engine: HttpClientEngine, json: Json, config: AppConfig): H
             socketTimeoutMillis = 90_000
         }
         defaultRequest {
-            url(config.baseUrl)
+            // Evaluated per request, so a runtime switch (e.g. after a company-code login) takes effect immediately.
+            url(baseUrlProvider.baseUrl())
             contentType(ContentType.Application.Json)
         }
     }

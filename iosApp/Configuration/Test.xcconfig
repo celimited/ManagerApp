@@ -1,9 +1,7 @@
 // Test server build: TestFlight only, never submitted for review. Installs beside the Live app.
-// Base URL must match the `stage` flavor in composeApp/build.gradle.kts.
+// Matches the Android `dev` flavor.
 #include "Common.xcconfig"
 
-APP_DISPLAY_NAME=ManageEsae Test
+APP_DISPLAY_NAME=ManageEsae Dev
 APP_ENVIRONMENT=TEST
-PRODUCT_BUNDLE_IDENTIFIER=org.celimited.manager.Manager.test
-// `//` starts a comment in xcconfig, hence `/$()/`.
-API_BASE_URL=http:/$()/210.4.65.222/SupervisorApp/api/v1/
+PRODUCT_BUNDLE_IDENTIFIER=org.celimited.manager.Manager.dev

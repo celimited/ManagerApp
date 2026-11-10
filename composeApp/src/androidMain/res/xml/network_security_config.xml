@@ -1,3 +1,3 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Live: HTTPS only. The stage flavor overrides this file to allow the HTTP test server. -->
+<!-- Live: HTTPS only. The dev flavor overrides this file to allow the HTTP test server. -->
 <network-security-config />

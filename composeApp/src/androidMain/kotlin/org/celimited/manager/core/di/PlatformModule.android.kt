@@ -5,7 +5,7 @@ import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.okhttp.OkHttp
 import org.celimited.manager.BuildConfig
 import org.celimited.manager.core.common.AppConfig
-import org.celimited.manager.core.common.AppEnvironment
+import org.celimited.manager.core.common.ServerEnvironment
 import org.celimited.manager.core.common.device.AndroidDeviceInfoProvider
 import org.celimited.manager.core.common.device.DeviceInfoProvider
 import org.celimited.manager.core.common.location.AndroidLocationProvider
@@ -17,13 +17,8 @@ import org.koin.dsl.module
 import java.util.concurrent.TimeUnit
 
 fun androidPlatformModule(context: Context): Module = module {
-    // BASE_URL / ENVIRONMENT come from the stage/live flavor in composeApp/build.gradle.kts.
-    single {
-        AppConfig(
-            baseUrl = BuildConfig.BASE_URL,
-            environment = AppEnvironment.valueOf(BuildConfig.ENVIRONMENT)
-        )
-    }
+    // ENVIRONMENT comes from the dev/prod flavor in composeApp/build.gradle.kts.
+    single { AppConfig(environment = ServerEnvironment.valueOf(BuildConfig.ENVIRONMENT)) }
     single<HttpClientEngine> {
         OkHttp.create {
             // OkHttp's own default (10s) timeout is shorter than Ktor's HttpTimeout plugin

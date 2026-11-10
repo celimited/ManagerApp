@@ -99,22 +99,24 @@ android {
         buildConfig = true
     }
 
-    // Test vs Live server builds. Installable side by side (different applicationId); only `live`
-    // goes to the Play Store. Base URLs here and in iosApp/Configuration/{Test,Live}.xcconfig must match.
+    // Flavors are ENVIRONMENTS (test server vs live server), never clients: one app serves every client.
+    // Base URL per environment: core/network/BaseUrlProvider.kt.
+    // dev installs beside prod (different applicationId); only prod goes to the Play Store.
+    // Must match APP_ENVIRONMENT in iosApp/Configuration/{Test,Live}.xcconfig.
     flavorDimensions += "env"
     productFlavors {
-        create("stage") {
+        create("dev") {
+            // Default variant in Android Studio: devDebug.
+            isDefault = true
             dimension = "env"
-            applicationIdSuffix = ".test"
-            versionNameSuffix = "-test"
-            resValue("string", "app_name", "ManageEsae Test")
-            buildConfigField("String", "BASE_URL", "\"http://210.4.65.222/SupervisorApp/api/v1/\"")
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            resValue("string", "app_name", "ManageEsae Dev")
             buildConfigField("String", "ENVIRONMENT", "\"TEST\"")
         }
-        create("live") {
+        create("prod") {
             dimension = "env"
             resValue("string", "app_name", "ManageEsae")
-            buildConfigField("String", "BASE_URL", "\"https://syngentawebapp.azurewebsites.net/SupervisorApp/api/v1/\"")
             buildConfigField("String", "ENVIRONMENT", "\"LIVE\"")
         }
     }

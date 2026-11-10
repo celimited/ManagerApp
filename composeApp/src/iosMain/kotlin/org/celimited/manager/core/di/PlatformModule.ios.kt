@@ -3,7 +3,7 @@ package org.celimited.manager.core.di
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.darwin.Darwin
 import org.celimited.manager.core.common.AppConfig
-import org.celimited.manager.core.common.AppEnvironment
+import org.celimited.manager.core.common.ServerEnvironment
 import org.celimited.manager.core.common.device.DeviceInfoProvider
 import org.celimited.manager.core.common.device.IosDeviceInfoProvider
 import org.celimited.manager.core.common.location.IosLocationProvider
@@ -15,14 +15,10 @@ import org.koin.dsl.module
 import platform.Foundation.NSBundle
 
 fun iosPlatformModule(): Module = module {
-    // API_BASE_URL / APP_ENVIRONMENT are set per configuration in iosApp/Configuration/{Test,Live}.xcconfig.
+    // APP_ENVIRONMENT is set per configuration in iosApp/Configuration/{Test,Live}.xcconfig.
     single {
-        val info = NSBundle.mainBundle.infoDictionary
-        AppConfig(
-            baseUrl = info?.get("API_BASE_URL") as? String
-                ?: error("API_BASE_URL missing from Info.plist; check the Xcode configuration's xcconfig"),
-            environment = if (info["APP_ENVIRONMENT"] == "TEST") AppEnvironment.TEST else AppEnvironment.LIVE
-        )
+        val env = NSBundle.mainBundle.infoDictionary?.get("APP_ENVIRONMENT") as? String
+        AppConfig(environment = if (env == "TEST") ServerEnvironment.TEST else ServerEnvironment.LIVE)
     }
     single<HttpClientEngine> {
         Darwin.create {

@@ -1,15 +1,12 @@
 package org.celimited.manager.core.common
 
-enum class AppEnvironment { TEST, LIVE }
+/** Which server a build talks to (dev = TEST, prod = LIVE). Set at build time. */
+enum class ServerEnvironment { TEST, LIVE }
 
 /**
- * Build-time app settings, provided by each platform's Koin module: Android from the flavor's
- * BuildConfig, iOS from Info.plist values set by iosApp/Configuration/{Test,Live}.xcconfig.
- *
- * This is the one place the API base URL is decided. When per-client selection (AKG, Coke, Arla, ...)
- * is added, only the code that builds this changes.
+ * Build-time app settings, provided by each platform's Koin module: Android from the dev/prod flavor's
+ * BuildConfig, iOS from APP_ENVIRONMENT set by iosApp/Configuration/{Test,Live}.xcconfig.
  */
 data class AppConfig(
-    val baseUrl: String,
-    val environment: AppEnvironment
+    val environment: ServerEnvironment
 )
