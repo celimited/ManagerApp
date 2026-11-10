@@ -13,9 +13,17 @@ composeMultiplatform = "1.10.0"
 junit = "4.13.2"
 kotlin = "2.3.0"
 material3 = "1.10.0-alpha05"
-navigation3 = "1.1.2"
+# 1.1.2 pulls navigationevent-compose 1.1.0, which needs compose-runtime 1.11 and reads
+# LocalHostDefaultProvider. compose-ui (the iOS host) resolves to 1.10.3 and never provides
+# that local, so NavDisplay crashes on iOS at launch. 1.1.1 uses navigationevent 1.0.1
+# (runtime 1.10.1). Revisit when composeMultiplatform moves to 1.11.x.
+navigation3 = "1.1.1"
 dateTime = "0.7.1"
-koin = "4.0.2"
+# 4.0.2 was compiled against lifecycle-viewmodel-compose 2.8.3 and reads
+# LocalViewModelStoreOwner's $stable backing field directly. That field is private in 2.10.0
+# (required by navigation3), which the JVM tolerates but Kotlin/Native's IR linker rejects —
+# koinViewModel() threw IrLinkageError on iOS. 4.2.2 targets 2.9.6 and links cleanly.
+koin = "4.2.2"
 ktor = "3.0.3"
 kotlinxSerializationJson = "1.7.3"
 kotlinxCoroutines = "1.10.2"

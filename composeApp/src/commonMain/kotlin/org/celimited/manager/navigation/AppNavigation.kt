@@ -41,6 +41,7 @@ fun AppNavigation(){
                     subclass(Screen.ResetPassword::class, Screen.ResetPassword.serializer())
                     subclass(Screen.Otp::class, Screen.Otp.serializer())
                     subclass(Screen.Attendance::class, Screen.Attendance.serializer())
+                    subclass(Screen.TeamAttendance::class, Screen.TeamAttendance.serializer())
                     subclass(Screen.AISalesReport::class, Screen.AISalesReport.serializer())
                     subclass(Screen.TodayStats::class, Screen.TodayStats.serializer())
                     subclass(Screen.SrDetail::class, Screen.SrDetail.serializer())

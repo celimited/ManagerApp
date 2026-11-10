@@ -31,7 +31,7 @@ class IosLocationProvider : LocationProvider {
         }
 
         withTimeoutOrNull(LOCATION_TIMEOUT_MILLIS) {
-            suspendCancellableCoroutine { continuation ->
+            suspendCancellableCoroutine<DataResult<GeoLocation>> { continuation ->
                 val manager = CLLocationManager()
                 val status = manager.authorizationStatus
                 if (status != kCLAuthorizationStatusAuthorizedWhenInUse &&
